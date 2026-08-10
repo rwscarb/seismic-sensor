@@ -475,8 +475,20 @@ def run_sensor(models):
             conf, mag_est = ensemble_predict(models, normalize_window(window))
             on_inference(net, sta, conf, mag_est, time.time())
 
+    startup_delay = int(os.environ.get('STARTUP_DELAY', '8'))
+    if startup_delay > 0:
+        print(f"Waiting {startup_delay}s for network...", flush=True)
+        time.sleep(startup_delay)
+
     print(f"\nFetching station coordinates...", flush=True)
-    fetch_station_coords()
+    try:
+        fetch_station_coords()
+    except Exception as e:
+        print(f"  coords fetch failed ({e}) — using hardcoded fallback", flush=True)
+        for net, sta in STATIONS:
+            key = f"{net}.{sta}"
+            if key in KNOWN_COORDS:
+                station_coords[key] = KNOWN_COORDS[key]
 
     print(f"\nConnecting to {SEEDLINK_SERVER}...", flush=True)
     station_list = ', '.join(f"{n}.{s}" for n, s in STATIONS)
@@ -499,8 +511,8 @@ def run_sensor(models):
         except KeyboardInterrupt:
             print("\nStopped.", flush=True)
             break
-        except Exception as e:
-            print(f"[{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}] Connection error: {e}", flush=True)
+        except BaseException as e:
+            print(f"[{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}] Connection error ({type(e).__name__}): {e}", flush=True)
             print(f"  Retrying in {backoff}s...", flush=True)
             time.sleep(backoff)
             backoff = min(backoff * 2, 300)
