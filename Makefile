@@ -20,7 +20,7 @@ restart:
 
 # Fly.io
 deploy:
-	fly deploy
+	fly deploy --no-cache
 
 fly-logs:
 	fly logs
