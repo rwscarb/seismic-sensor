@@ -507,7 +507,7 @@ _WEB_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Seismic Sensor</title>
+<title>Seismic Sensor — %(app_title)s</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
@@ -515,6 +515,8 @@ _WEB_HTML = """<!DOCTYPE html>
 body{background:#0d1117;color:#c9d1d9;font-family:'Courier New',monospace;font-size:13px}
 header{background:#161b22;border-bottom:1px solid #30363d;padding:12px 20px;display:flex;align-items:center;gap:16px}
 header h1{font-size:16px;color:#58a6ff;letter-spacing:1px}
+#cfg{color:#6e7681;font-size:11px}
+[title]{cursor:help}
 #status-dot{width:8px;height:8px;border-radius:50%;background:#238636;animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 #last-update{color:#6e7681;font-size:11px;margin-left:auto}
@@ -543,6 +545,7 @@ header h1{font-size:16px;color:#58a6ff;letter-spacing:1px}
 <header>
   <div id="status-dot"></div>
   <h1>&#127757; Seismic Sensor</h1>
+  <span id="cfg" title="SeedLink: %(seedlink)s">%(cfg_text)s</span>
   <span id="last-update">connecting...</span>
 </header>
 <div class="grid">
@@ -575,16 +578,24 @@ function update(){
     Object.entries(d.stations).sort((a,b)=>b[1].conf-a[1].conf).forEach(([k,s])=>{
       const pct=Math.round(s.conf*100);
       const col=confColor(s.conf);
-      sDiv.innerHTML+=`<div class="station">
+      const coord=sCoords[k]?`${sCoords[k][0].toFixed(2)}°N ${sCoords[k][1].toFixed(2)}°E`:'coords unknown';
+      const cardTitle=`${k}\n${coord}\nconf: ${s.conf.toFixed(4)}\nlast sample: ${new Date(s.last_ts*1000).toUTCString()}`;
+      const barTitle=`threshold: %(threshold)s | current: ${s.conf.toFixed(3)}`;
+      sDiv.innerHTML+=`<div class="station" title="${cardTitle}">
         <div class="sta-row"><span class="sta-name">${k}</span>
         <span class="sta-conf" style="color:${col}">${s.conf.toFixed(3)}</span></div>
-        <div class="conf-bar"><div class="conf-fill" style="width:${pct}%;background:${col}"></div></div>
-        <div style="color:#6e7681;font-size:10px">${fmtAge(s.last_ts)} ago</div>
+        <div class="conf-bar" title="${barTitle}"><div class="conf-fill" style="width:${pct}%;background:${col}"></div></div>
+        <div style="color:#6e7681;font-size:10px">${coord} &mdash; ${fmtAge(s.last_ts)} ago</div>
       </div>`;
       if(sCoords[k] && !staMarkers[k]){
         const [lat,lon]=sCoords[k];
-        staMarkers[k]=L.circleMarker([lat,lon],{radius:5,color:'#58a6ff',fillColor:'#58a6ff',fillOpacity:.8})
-          .bindTooltip(k).addTo(map);
+        staMarkers[k]=L.circleMarker([lat,lon],{radius:6,color:'#58a6ff',fillColor:'#58a6ff',fillOpacity:.9})
+          .bindTooltip(`<b>${k}</b><br>${coord}`,{permanent:false,direction:'top'}).addTo(map);
+      }
+      if(staMarkers[k]){
+        const mc=confColor(s.conf);
+        staMarkers[k].setStyle({color:mc,fillColor:mc});
+        staMarkers[k].setTooltipContent(`<b>${k}</b><br>${coord}<br>conf: ${s.conf.toFixed(3)}`);
       }
     });
     // detections
@@ -592,13 +603,16 @@ function update(){
     const dets=[...d.detections].reverse();
     if(!dets.length){dDiv.innerHTML='<div class="no-data">No detections yet</div>';return}
     dDiv.innerHTML=dets.slice(0,20).map(det=>{
-      const mb=det.mb?`<span class="det-mb">mb=${det.mb.toFixed(1)}</span>`:'<span style="color:#6e7681">mb…</span>';
+      const mb=det.mb!=null?`<span class="det-mb">mb=${det.mb.toFixed(1)}</span>`:'<span style="color:#6e7681">mb…</span>';
       let epi='';
       if(det.epicenter){
         const [la,lo]=det.epicenter;
         epi=`<span class="det-epi"> ${Math.abs(la).toFixed(1)}°${la>=0?'N':'S'} ${Math.abs(lo).toFixed(1)}°${lo>=0?'E':'W'}</span>`;
       }
-      return `<div class="det">
+      const detTitle=`${det.ts}\nstations: ${det.stations.join(', ')}\nconf: ${det.conf.toFixed(4)}`
+        +(det.epicenter?`\nepi: ${det.epicenter[0].toFixed(2)}°N ${det.epicenter[1].toFixed(2)}°E`:'')
+        +(det.mb!=null?`\nmb=${det.mb.toFixed(1)} (IASPEI body-wave)`:'');
+      return `<div class="det" title="${detTitle}">
         <span class="det-time">${det.ts}</span><br>
         <span class="det-sta">${det.stations.join(', ')}</span>  ${mb}${epi}
       </div>`;
@@ -632,7 +646,17 @@ def start_web_server():
         return
 
     coords_json = json.dumps({k: list(v) for k, v in station_coords.items()})
-    html = _WEB_HTML.replace('%(station_coords_json)s', coords_json)
+    sta_list    = ', '.join(f"{n}.{s}" for n, s in STATIONS)
+    cfg_text    = f"threshold {THRESHOLD} | {N_CONSENSUS}/{len(STATIONS)} consensus | {CONSENSUS_WINDOW:.0f}s window"
+    app_title   = f"{sta_list} | fra"
+    html = (
+        _WEB_HTML
+        .replace('%(station_coords_json)s', coords_json)
+        .replace('%(app_title)s',           app_title)
+        .replace('%(cfg_text)s',            cfg_text)
+        .replace('%(seedlink)s',            SEEDLINK_SERVER)
+        .replace('%(threshold)s',           str(THRESHOLD))
+    )
 
     app = Flask(__name__)
     import logging
