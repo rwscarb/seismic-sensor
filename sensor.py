@@ -51,7 +51,7 @@ BUF_STRENGTH  = 1.429
 
 # ── Known station coordinates (lat, lon) — fallback if FDSN fetch fails ───────
 KNOWN_COORDS = {
-    'GE.APE':  (67.597,  33.401),   # Apatity, Russia
+    'GE.APE':  (37.069,  25.531),   # Aegean, Greece (FDSN-confirmed)
     'GE.MORC': (49.781,  16.978),   # Morava, Czech Republic
     'GE.BORG': (64.747, -21.328),   # Borgarfjordur, Iceland
     'GE.KBS':  (78.926,  11.943),   # Ny-Ålesund, Svalbard
