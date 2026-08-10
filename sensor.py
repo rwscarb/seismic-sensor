@@ -957,7 +957,7 @@ function applyMarkerSelection(){
   if(_pulseIv){clearInterval(_pulseIv);_pulseIv=null;}
   detMarkers.forEach(({m,ts,r})=>{
     if(ts===selectedDetTs){
-      m.setStyle({color:'#3fb950',fillColor:'#3fb950',fillOpacity:.9});
+      m.setStyle({color:'#2ea043',weight:1,fillColor:'#3fb950',fillOpacity:.95});
       _pulsePhase=0;
       _pulseIv=setInterval(()=>{
         _pulsePhase=(_pulsePhase+0.15)%(2*Math.PI);
@@ -967,12 +967,19 @@ function applyMarkerSelection(){
       },40);
     } else {
       m.setRadius(r);
-      m.setStyle({color:'#f85149',fillColor:'#f85149',fillOpacity:selectedDetTs?0.25:0.6});
+      m.setStyle({color:'#c0392b',fillColor:'#f85149',fillOpacity:selectedDetTs?0.2:0.85});
     }
+  });
+}
+function applyRowSelection(){
+  document.querySelectorAll('.det[data-ts]').forEach(el=>{
+    if(el.dataset.ts===selectedDetTs)el.classList.add('det-selected');
+    else el.classList.remove('det-selected');
   });
 }
 function flyToEpi(lat,lon,ts){
   selectedDetTs=ts||null;
+  applyRowSelection();
   applyMarkerSelection();
   map.getPane('overlayPane').style.visibility='hidden';
   map.flyTo([lat,lon],6,{duration:2.5});
@@ -1150,7 +1157,7 @@ function update(){
       const selCls=det.ts===selectedDetTs?' det-selected':'';
       const rowClick=(!det.teleseismic&&det.epicenter)
         ?`onclick="flyToEpi(${det.epicenter[0]},${det.epicenter[1]},'${det.ts}')" style="cursor:pointer"`:'';
-      return sep+`<div class="det${selCls}" ${rowClick} title="${escAttr(detTitle)}">
+      return sep+`<div class="det${selCls}" data-ts="${det.ts}" ${rowClick} title="${escAttr(detTitle)}">
         <span class="det-time">${tPart}</span>
         <span class="det-stas">${det.stations.join(' · ')}</span>
         <span class="det-chips-inline">${mbChip}${epiChip}</span>
@@ -1168,7 +1175,7 @@ function update(){
       const mb=det.mb||4;
       const r=Math.max(4,Math.min(14,(mb-2)*3+4));
       const mbLabel=det.mb?(det.mb_local?'local':det.mb_approx?'mb~'+det.mb.toFixed(1):'mb='+det.mb.toFixed(1)):'mb pending';
-      const m=L.circleMarker([la,lo],{radius:r,color:'#f85149',fillColor:'#f85149',fillOpacity:.6})
+      const m=L.circleMarker([la,lo],{radius:r,color:'#c0392b',weight:1,fillColor:'#f85149',fillOpacity:.85})
         .bindPopup(`${fmtLocal(det.ts)}<br>${det.stations.join(', ')}<br>${mbLabel}`).addTo(map);
       detMarkers.push({m,ts:det.ts,r});
     });
