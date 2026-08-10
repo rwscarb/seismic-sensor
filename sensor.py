@@ -1269,6 +1269,12 @@ document.addEventListener('fullscreenchange',()=>{
 // Esc is handled by the browser when in native fullscreen; cover the CSS-only fallback case
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!document.fullscreenElement)_applyFsMode(false);});
 let _pulseTs=null;
+// Zoom-scaled radius: full size at zoom ≥ 8, progressively smaller below that.
+function zoomR(base){
+  const z=map.getZoom();
+  const f=Math.max(0.35,Math.min(1.0,(z-1)/7));
+  return Math.max(2,base*f);
+}
 function applyMarkerSelection(){
   detMarkers.forEach(({m,ts,r})=>{
     if(ts===selectedDetTs){
@@ -1279,17 +1285,18 @@ function applyMarkerSelection(){
         _pulseIv=setInterval(()=>{
           _pulsePhase=(_pulsePhase+0.15)%(2*Math.PI);
           const p=Math.abs(Math.sin(_pulsePhase));
-          m.setRadius(r+p*5);
+          m.setRadius(zoomR(r)+p*5);
           m.setStyle({fillOpacity:.55+p*.4});
         },40);
       }
     } else {
-      m.setRadius(r);
+      m.setRadius(zoomR(r));
       m.setStyle({color:'#c0392b',fillColor:'#f85149',fillOpacity:selectedDetTs?0.2:0.85});
     }
   });
   if(!selectedDetTs&&_pulseIv){clearInterval(_pulseIv);_pulseIv=null;_pulseTs=null;}
 }
+map.on('zoomend',()=>applyMarkerSelection());
 function applyRowSelection(){
   document.querySelectorAll('.det[data-ts]').forEach(el=>{
     if(el.dataset.ts===selectedDetTs)el.classList.add('det-selected');
@@ -1519,7 +1526,7 @@ function update(){
         +`<div class="tip-stas">${det.stations.join(' · ')}</div>`
         +(locStr?`<div class="tip-loc">${locStr}</div>`:'')
         +'</div>';
-      const m=L.circleMarker([la,lo],{radius:r,color:'#c0392b',weight:1,fillColor:'#f85149',fillOpacity:.85})
+      const m=L.circleMarker([la,lo],{radius:zoomR(r),color:'#c0392b',weight:1,fillColor:'#f85149',fillOpacity:.85})
         .bindTooltip(tipHtml,{sticky:false,direction:'top',className:'det-tip'}).addTo(map);
       kept.push({m,ts:det.ts,r});
     });
