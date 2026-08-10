@@ -1308,7 +1308,7 @@ function flyToEpi(lat,lon,ts){
   applyRowSelection();
   applyMarkerSelection();
   map.getPane('overlayPane').style.visibility='hidden';
-  map.flyTo([lat,lon],5,{duration:2.5});
+  map.flyTo([lat,lon],5,{duration:1.0,easeLinearity:0.5});
   map.once('moveend',()=>{map.getPane('overlayPane').style.visibility='';applyMarkerSelection();});
 }
 // audio alert
@@ -1540,7 +1540,7 @@ function update(){
       applyRowSelection();
       const [la,lo]=newestEpi.epicenter;
       map.getPane('overlayPane').style.visibility='hidden';
-      map.flyTo([la,lo],5,{duration:2.5});
+      map.flyTo([la,lo],5,{duration:1.0,easeLinearity:0.5});
       map.once('moveend',()=>{map.getPane('overlayPane').style.visibility='';applyMarkerSelection();});
     }
     // fullscreen overlay: station list + latest detection
