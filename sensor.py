@@ -848,6 +848,7 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 #fs-btn{position:absolute;top:6px;right:6px;z-index:1000;background:#161b22cc;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:3px 7px;font-size:11px;cursor:pointer;backdrop-filter:blur(4px)}
 #fs-btn:hover{color:#e6edf3;border-color:#58a6ff}
 body.fs-mode .grid{display:block}
+body.fs-mode #fs-btn{right:350px}
 body.fs-mode .right-col{position:fixed!important;top:50px;right:10px;bottom:10px;width:330px;z-index:1001;background:#161b22bb;backdrop-filter:blur(10px);border:1px solid #30363d;border-radius:8px;overflow:hidden;display:flex!important;flex-direction:column}
 body.fs-mode .right-col .panel-hdr{background:transparent}
 body.fs-mode .right-col{border:none;border-radius:8px}
@@ -1227,9 +1228,11 @@ function update(){
     const newestEpi=dets.find(det=>det.epicenter&&!det.teleseismic);
     if(newestEpi && newestEpi.ts!==lastFlyTs){
       lastFlyTs=newestEpi.ts;
+      selectedDetTs=newestEpi.ts;
+      applyRowSelection();
       const [la,lo]=newestEpi.epicenter;
       map.getPane('overlayPane').style.visibility='hidden';
-      map.flyTo([la,lo],5,{duration:2.5});
+      map.flyTo([la,lo],7,{duration:2.5});
       map.once('moveend',()=>{map.getPane('overlayPane').style.visibility='';applyMarkerSelection();});
     }
     // fullscreen overlay: station list + latest detection
