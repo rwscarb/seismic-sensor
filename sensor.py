@@ -213,6 +213,9 @@ station_first_arr  = {}   # key → float or None (first P-arrival timestamp, co
 
 recent_detections  = collections.deque()
 last_alert         = [0.0]
+suppressed_mag_count       = [0]
+suppressed_mag_last_report = [0.0]
+SUPPRESSED_REPORT_INTERVAL = 60.0
 
 def station_key(net, sta):
     return f"{net}.{sta}"
@@ -254,6 +257,11 @@ def on_inference(net, sta, conf, mag_est, now):
             recent_detections.clear()
 
             station_list = ', '.join(sorted(stations_fired))
+            if suppressed_mag_count[0] > 0:
+                print(f"  [{ts}] {suppressed_mag_count[0]} event(s) suppressed "
+                      f"(saturated magnitude estimate)", flush=True)
+                suppressed_mag_count[0] = 0
+                suppressed_mag_last_report[0] = now
             print(f"\n{'='*60}", flush=True)
             print(f"  DETECTION  {ts}", flush=True)
             print(f"  Stations:   {station_list}  ({len(stations_fired)}/{N_CONSENSUS} consensus)", flush=True)
@@ -295,7 +303,15 @@ def on_inference(net, sta, conf, mag_est, now):
                   f"(waiting for {n_waiting} more station(s))", flush=True)
     else:
         if now - station_status[key] > 10.0:
-            print(f"[{ts}] {key}  conf={conf:.3f}  mag={fmt_mag(mag_est)}", flush=True)
+            if mag_est > MAG_MAX_CREDIBLE:
+                suppressed_mag_count[0] += 1
+                if now - suppressed_mag_last_report[0] >= SUPPRESSED_REPORT_INTERVAL:
+                    print(f"[{ts}] {suppressed_mag_count[0]} event(s) suppressed "
+                          f"(saturated magnitude estimate)", flush=True)
+                    suppressed_mag_count[0] = 0
+                    suppressed_mag_last_report[0] = now
+            else:
+                print(f"[{ts}] {key}  conf={conf:.3f}  mag={fmt_mag(mag_est)}", flush=True)
             station_status[key] = now
 
 # ── SeedLink client ────────────────────────────────────────────────────────────
