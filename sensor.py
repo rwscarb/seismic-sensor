@@ -77,6 +77,7 @@ class DetectionSnap:
     conf: float = 0.0
     logit_gap: float = 0.0   # raw mean logit gap before temperature scaling
     mb: float = None
+    mb_approx: bool = False   # True when epicenter unknown; Q(Δ) assumed at 45°
     epicenter: tuple = None   # (lat, lon) or None
     usgs: dict = None         # USGS ComCat event if matched
 
@@ -106,6 +107,7 @@ def _load_detections():
                 conf=r.get('conf', 0.0),
                 logit_gap=r.get('logit_gap', 0.0),
                 mb=r.get('mb'),
+                mb_approx=r.get('mb_approx', False),
                 epicenter=tuple(r['epicenter']) if r.get('epicenter') else None,
                 usgs=r.get('usgs'),
             )
@@ -136,11 +138,12 @@ class SensorState:
             snap = list(self.detections)
         _save_detections(snap)
 
-    def update_mb(self, ref_unix, mb):
+    def update_mb(self, ref_unix, mb, approx=False):
         with self._lock:
             for det in reversed(self.detections):
                 if abs(det.unix_ts - ref_unix) < 30:
                     det.mb = mb
+                    det.mb_approx = approx
                     break
             snap = list(self.detections)
         _save_detections(snap)
@@ -345,8 +348,6 @@ def estimate_mb(key, p_arrival_unix, epicenter_latlon):
         return None, "no response inventory"
     if key not in station_rings or 'HHZ' not in station_rings[key]:
         return None, "no HHZ ring"
-    if epicenter_latlon is None or key not in station_coords:
-        return None, "no epicenter/coords"
 
     ring = station_rings[key]['HHZ']
     data = np.array(list(ring), dtype=np.float32)
@@ -386,16 +387,20 @@ def estimate_mb(key, p_arrival_unix, epicenter_latlon):
     T  = float(2.0 * np.mean(np.diff(zc)) / TARGET_SRATE) if len(zc) >= 4 else 1.0
     T  = max(0.05, min(5.0, T))
 
-    sta_lat, sta_lon = station_coords[key]
-    epi_lat, epi_lon = epicenter_latlon
-    dist_deg = haversine_km(sta_lat, sta_lon, epi_lat, epi_lon) / 111.195
-    dist_deg = max(2.0, min(100.0, dist_deg))
-
     # Q(Δ) — Richter (1958) table approximation for shallow focus
-    Q = (5.0 + 0.013 * dist_deg) if dist_deg < 20.0 else (5.1 + 0.015 * dist_deg)
+    approx = False
+    if epicenter_latlon is not None and key in station_coords:
+        sta_lat, sta_lon = station_coords[key]
+        epi_lat, epi_lon = epicenter_latlon
+        dist_deg = haversine_km(sta_lat, sta_lon, epi_lat, epi_lon) / 111.195
+        dist_deg = max(2.0, min(100.0, dist_deg))
+    else:
+        dist_deg = 45.0   # mid-range teleseismic assumption; ±0.6 mag unit uncertainty
+        approx = True
 
+    Q = (5.0 + 0.013 * dist_deg) if dist_deg < 20.0 else (5.1 + 0.015 * dist_deg)
     mb = max(0.0, min(10.0, math.log10(A / T) + Q))
-    return round(mb, 1), None
+    return round(mb, 1), ('approx' if approx else None)
 
 
 def report_mb_deferred(stations_fired, p_arrivals, epicenter_latlon, det_unix):
@@ -407,24 +412,29 @@ def report_mb_deferred(stations_fired, p_arrivals, epicenter_latlon, det_unix):
         p_t = p_arrivals.get(k)
         if p_t is None:
             continue
-        mb, err = estimate_mb(k, p_t, epicenter_latlon)
+        mb, tag = estimate_mb(k, p_t, epicenter_latlon)
         if mb is not None:
             dist_str = ""
             if epicenter_latlon and k in station_coords:
                 d = haversine_km(station_coords[k][0], station_coords[k][1],
                                  epicenter_latlon[0], epicenter_latlon[1]) / 111.195
                 dist_str = f"  Δ={d:.1f}°"
-            print(f"  [mb {ts}] {k}: mb={mb:.1f}{dist_str}", flush=True)
-            mbs.append(mb)
+            flag = " [approx Δ=45°]" if tag == 'approx' else ""
+            print(f"  [mb {ts}] {k}: mb={mb:.1f}{dist_str}{flag}", flush=True)
+            mbs.append((mb, tag))
         else:
-            print(f"  [mb {ts}] {k}: skipped ({err})", flush=True)
+            print(f"  [mb {ts}] {k}: skipped ({tag})", flush=True)
 
     if not mbs:
         return
-    consensus = sorted(mbs)[len(mbs) // 2]
-    label = f"({len(mbs)} stations, IASPEI)" if len(mbs) > 1 else "(IASPEI body-wave)"
-    print(f"  [mb {ts}] mb={consensus:.1f}  {label}", flush=True)
-    sensor_state.update_mb(det_unix, consensus)
+    mb_vals = [m for m, _ in mbs]
+    tags     = [t for _, t in mbs]
+    consensus = sorted(mb_vals)[len(mb_vals) // 2]
+    approx    = all(t == 'approx' for t in tags)
+    n = len(mb_vals)
+    label = f"({'~' if approx else ''}{n} stations, IASPEI{', Δ≈45°' if approx else ''})"
+    print(f"  [mb {ts}] mb={'~' if approx else ''}{consensus:.1f}  {label}", flush=True)
+    sensor_state.update_mb(det_unix, consensus, approx=approx)
 
 
 # ── Multi-station consensus state ─────────────────────────────────────────────
@@ -721,7 +731,7 @@ function update(){
     if(!dets.length){dDiv.innerHTML='<div class="no-data">No detections yet</div>';return}
     const escAttr=s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
     dDiv.innerHTML=dets.slice(0,20).map(det=>{
-      const mb=det.mb!=null?`<span class="det-mb">mb=${det.mb.toFixed(1)}</span>`:'<span style="color:#6e7681">mb…</span>';
+      const mb=det.mb!=null?`<span class="det-mb">${det.mb_approx?'mb~':'mb='}${det.mb.toFixed(1)}</span>`:'<span style="color:#6e7681">mb…</span>';
       let epi='';
       if(det.epicenter){
         const [la,lo]=det.epicenter;
@@ -731,7 +741,7 @@ function update(){
       const magType=det.usgs?(det.usgs.magType||''):'';
       const detTitle=`${det.ts}\nstations: ${det.stations.join(', ')}\nconf: ${det.conf.toFixed(4)}  logit gap: ${(det.logit_gap||0).toFixed(1)}`
         +(det.epicenter?`\nepi: ${det.epicenter[0].toFixed(2)}N ${det.epicenter[1].toFixed(2)}E`:'')
-        +(det.mb!=null?`\nmb=${det.mb.toFixed(1)} (IASPEI body-wave)`:`\nmb pending...`)
+        +(det.mb!=null?`\n${det.mb_approx?'mb~':'mb='}${det.mb.toFixed(1)} (IASPEI${det.mb_approx?', assumed Δ=45°':''})`:`\nmb pending...`)
         +(det.usgs?`\nUSGS: M${det.usgs.mag}${magType} - ${place}`:`\nUSGS lookup pending...`);
       let usgsStr='';
       if(det.usgs){usgsStr=`<span style="color:#a371f7"> ·M${det.usgs.mag}${magType} ${place.split(',')[0]}</span>`}
@@ -749,7 +759,7 @@ function update(){
       const mb=det.mb||5;
       const r=Math.max(4,Math.min(14,mb*2));
       const m=L.circleMarker([la,lo],{radius:r,color:'#f85149',fillColor:'#f85149',fillOpacity:.6})
-        .bindPopup(`${det.ts}<br>${det.stations.join(', ')}<br>${det.mb?'mb='+det.mb.toFixed(1):'mb pending'}`).addTo(map);
+        .bindPopup(`${det.ts}<br>${det.stations.join(', ')}<br>${det.mb?(det.mb_approx?'mb~':'mb=')+det.mb.toFixed(1):'mb pending'}`).addTo(map);
       detMarkers.push(m);
     });
   }).catch(()=>{document.getElementById('status-dot').style.background='#f85149'});
