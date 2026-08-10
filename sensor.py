@@ -681,23 +681,20 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 .sta-conf{font-size:11px}
 .conf-bar{height:4px;border-radius:2px;background:#21262d;margin-top:2px}
 .conf-fill{height:100%;border-radius:2px;transition:width .5s}
-.det{padding:8px 0;border-bottom:1px solid #21262d;font-size:11px}
-.det:first-child{border-top:none}
+.det{display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid #21262d;font-size:11px;min-height:26px}
 .det:last-child{border-bottom:none}
-.det-row1{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
-.det-time{color:#8b949e}
-.det-age{color:#6e7681;font-size:10px}
-.det-sta{color:#58a6ff}
-.det-chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:3px}
-.chip{font-size:10px;border-radius:3px;padding:1px 5px;font-weight:bold}
+.det-time{color:#8b949e;font-size:10px;white-space:nowrap;flex-shrink:0;font-variant-numeric:tabular-nums}
+.det-stas{color:#58a6ff;white-space:nowrap;flex-shrink:0}
+.det-chips-inline{display:flex;gap:4px;flex:1;min-width:0}
+.det-usgs-icon{flex-shrink:0;font-size:13px;line-height:1;cursor:default}
+.det-age{color:#6e7681;font-size:10px;white-space:nowrap;flex-shrink:0;text-align:right;min-width:28px}
+.chip{font-size:10px;border-radius:3px;padding:1px 5px;font-weight:bold;white-space:nowrap}
 .chip-mb-low{color:#3fb950;background:#0d2a15}
 .chip-mb-mid{color:#d29922;background:#2a1f00}
 .chip-mb-high{color:#f85149;background:#2d1216}
 .chip-mb-approx{opacity:.8;font-style:italic}
 .chip-epi{color:#d29922;background:#2a1f00}
 .chip-usgs{color:#a371f7;background:#1e1129}
-.chip-usgs-none{color:#6e7681;background:#161b22;border:1px solid #30363d}
-.chip-usgs-pending{color:#6e7681;background:#161b22}
 #map{height:320px;border-radius:4px;margin-top:10px}
 .right-col{display:flex;flex-direction:column;gap:12px}
 .no-data{color:#6e7681;font-style:italic;font-size:11px}
@@ -777,18 +774,20 @@ function update(){
     const escAttr=s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
     const mbChipClass=mb=>mb>=7?'chip-mb-high':mb>=5?'chip-mb-mid':'chip-mb-low';
     const newHtml=dets.slice(0,20).map(det=>{
-      // mb chip
+      // time — show just HH:MM:SSZ to save width; full ts in tooltip
+      const tPart=det.ts.length>=19?det.ts.substring(11,19)+'Z':det.ts;
+      // mb chip (center)
       let mbChip='';
       if(det.mb!=null){
         if(det.mb_local){
-          mbChip=`<span class="chip chip-mb-approx" title="Amplitude ratio between stations suggests a local or regional source; IASPEI mb is not reliable for this detection">local</span>`;
+          mbChip=`<span class="chip chip-mb-approx" title="Amplitude ratio between stations suggests a local/regional source; IASPEI mb unreliable">local</span>`;
         } else {
           const lbl=(det.mb_approx?'mb~':'mb=')+det.mb.toFixed(1);
           const cls=mbChipClass(det.mb)+(det.mb_approx?' chip-mb-approx':'');
           mbChip=`<span class="chip ${cls}" title="${det.mb_approx?'approx, assumed distance 45 deg':'IASPEI body-wave'}">${lbl}</span>`;
         }
       } else {
-        mbChip=`<span class="chip chip-usgs-pending">mb…</span>`;
+        mbChip=`<span class="chip" style="color:#6e7681;background:#161b22">mb…</span>`;
       }
       // epicenter chip
       let epiChip='';
@@ -797,32 +796,34 @@ function update(){
         const ns=la>=0?'N':'S', ew=lo>=0?'E':'W';
         epiChip=`<span class="chip chip-epi">${Math.abs(la).toFixed(1)}°${ns} ${Math.abs(lo).toFixed(1)}°${ew}</span>`;
       }
-      // usgs chip
-      let usgsChip='';
+      // USGS icon — right-aligned checkmark/cross
+      let usgsIcon='';
+      let usgsTitle='';
       if(det.usgs){
         const place=det.usgs.place||'';
         const mt=det.usgs.magType||'';
-        usgsChip=`<span class="chip chip-usgs" title="${escAttr(place)}">M${det.usgs.mag}${mt} ${place.split(',')[0]}</span>`;
+        usgsTitle=`M${det.usgs.mag}${mt} — ${place}`;
+        usgsIcon=`<span class="det-usgs-icon" style="color:#a371f7" title="${escAttr(usgsTitle)}">&#10003;</span>`;
       } else if(det.usgs_checked){
-        usgsChip=`<span class="chip chip-usgs-none" title="No M%(usgs_min_mag)s+ event found in USGS catalog for this window">USGS: no match</span>`;
+        usgsTitle=`No M%(usgs_min_mag)s+ event in USGS catalog for this window`;
+        usgsIcon=`<span class="det-usgs-icon" style="color:#30363d" title="${escAttr(usgsTitle)}">&#10007;</span>`;
       } else {
-        usgsChip=`<span class="chip chip-usgs-pending">USGS…</span>`;
+        usgsIcon=`<span class="det-usgs-icon" style="color:#6e7681" title="USGS lookup pending">&#8943;</span>`;
       }
-      // tooltip
+      // full tooltip
       const place=det.usgs?(det.usgs.place||''):'';
       const magType=det.usgs?(det.usgs.magType||''):'';
-      const mbNote=det.mb!=null?(det.mb_local?'local source (amplitude ratio too high for teleseismic mb)':det.mb_approx?`mb~${det.mb.toFixed(1)} (IASPEI, assumed dist=45deg)`:`mb=${det.mb.toFixed(1)} (IASPEI)`):'mb pending...';
-      const detTitle=`${det.ts}\nstations: ${det.stations.join(', ')}\nconf: ${det.conf.toFixed(4)}  gap: ${(det.logit_gap||0).toFixed(1)}`
+      const mbNote=det.mb!=null?(det.mb_local?'local source (amp ratio > 5x)':det.mb_approx?`mb~${det.mb.toFixed(1)} IASPEI Δ≈45°`:`mb=${det.mb.toFixed(1)} IASPEI`):'mb pending';
+      const detTitle=`${det.ts}\n${det.stations.join(', ')}\nconf: ${det.conf.toFixed(4)}  gap: ${(det.logit_gap||0).toFixed(1)}`
         +(det.epicenter?`\nepi: ${det.epicenter[0].toFixed(2)}N ${det.epicenter[1].toFixed(2)}E`:'')
         +`\n${mbNote}`
-        +(det.usgs?`\nUSGS: M${det.usgs.mag}${magType} - ${place}`:det.usgs_checked?`\nUSGS: no M%(usgs_min_mag)s+ match`:`\nUSGS lookup pending...`);
+        +(det.usgs?`\nUSGS: M${det.usgs.mag}${magType} — ${place}`:det.usgs_checked?`\nUSGS: no M%(usgs_min_mag)s+ match`:`\nUSGS pending`);
       return `<div class="det" title="${escAttr(detTitle)}">
-        <div class="det-row1">
-          <span class="det-time">${det.ts}</span>
-          <span class="det-age">${fmtAge(det.unix_ts)} ago</span>
-        </div>
-        <div style="color:#58a6ff;font-size:11px;margin-bottom:3px">${det.stations.join(' · ')}</div>
-        <div class="det-chips">${mbChip}${epiChip}${usgsChip}</div>
+        <span class="det-time">${tPart}</span>
+        <span class="det-stas">${det.stations.join(' · ')}</span>
+        <span class="det-chips-inline">${mbChip}${epiChip}</span>
+        ${usgsIcon}
+        <span class="det-age">${fmtAge(det.unix_ts)}</span>
       </div>`;
     }).join('');
     if(dDiv.innerHTML!==newHtml)dDiv.innerHTML=newHtml;
