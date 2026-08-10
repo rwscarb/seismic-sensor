@@ -22,6 +22,8 @@ SERVER_START_TIME = time.time()  # recorded once at process start; used as deplo
 CHECKPOINT_DIR   = os.environ.get('CHECKPOINT_DIR', './checkpoints')
 SEEDLINK_SERVER  = os.environ.get('SEEDLINK_SERVER', 'geofon.gfz-potsdam.de:18000')
 STATIONS_RAW     = os.environ.get('STATIONS', 'GE.APE,GE.MORC,GE.BORG,GE.KBS')
+IRIS_SERVER      = os.environ.get('IRIS_SERVER', 'rtserve.iris.washington.edu:18000')
+IRIS_STATIONS_RAW = os.environ.get('IRIS_STATIONS', '')  # e.g. "IU.COR,CN.PGC,IU.KDAK"
 CHANNELS         = os.environ.get('CHANNELS', 'HHZ,HHN,HHE').split(',')
 THRESHOLD        = float(os.environ.get('THRESHOLD', '0.835'))
 N_SEEDS          = int(os.environ.get('N_SEEDS', '3'))
@@ -40,14 +42,22 @@ SLACK_WEBHOOK_URL = os.environ.get('SLACK_WEBHOOK_URL', '')       # optional: po
 DETECTIONS_PATH  = os.environ.get('DETECTIONS_PATH', '/tmp/detections.json')
 
 # Parse stations: "GE.APE,GE.MORC" → [('GE','APE'), ('GE','MORC')]
-STATIONS = []
-for s in STATIONS_RAW.split(','):
-    s = s.strip()
-    if '.' in s:
-        net, sta = s.split('.', 1)
-        STATIONS.append((net.strip(), sta.strip()))
-    else:
-        STATIONS.append(('GE', s))
+def _parse_stations(raw):
+    result = []
+    for s in raw.split(','):
+        s = s.strip()
+        if not s:
+            continue
+        if '.' in s:
+            net, sta = s.split('.', 1)
+            result.append((net.strip(), sta.strip()))
+        else:
+            result.append(('GE', s))
+    return result
+
+STATIONS      = _parse_stations(STATIONS_RAW)
+IRIS_STATIONS = _parse_stations(IRIS_STATIONS_RAW)
+ALL_STATIONS  = STATIONS + IRIS_STATIONS   # full combined list for ring init / coord fetch
 
 DEVICE        = 'cpu'
 K             = 128
@@ -84,6 +94,7 @@ class DetectionSnap:
     mb_approx: bool = False   # True when epicenter unknown; Q(Δ) assumed at 45°
     mb_local: bool = False    # True when amplitude ratio suggests a local/regional source
     epicenter: tuple = None   # (lat, lon) or None
+    teleseismic: bool = False  # True when locator RMS > threshold → distant source, pin unreliable
     usgs: dict = None         # USGS ComCat event if matched
     usgs_checked: bool = False  # True once USGS lookup has completed (match or not)
 
@@ -116,6 +127,7 @@ def _load_detections():
                 mb_approx=r.get('mb_approx', False),
                 mb_local=r.get('mb_local', False),
                 epicenter=tuple(r['epicenter']) if r.get('epicenter') else None,
+                teleseismic=r.get('teleseismic', False),
                 usgs=r.get('usgs'),
                 usgs_checked=r.get('usgs_checked', False),
             )
@@ -193,42 +205,65 @@ KNOWN_COORDS = {
     'GE.MTE':  (38.528,  -7.538),   # Mértola, Portugal
     'GE.MATE': (40.649,  16.704),   # Matera, Italy
     'GE.KARP': (35.784,  27.154),   # Karpathos, Greece
+    # IRIS network — Pacific Northwest / Cascadia
+    'IU.COR':  (44.586, -123.304),  # Corvallis, Oregon
+    'CN.PGC':  (48.650, -123.452),  # Saanich, BC (Cascadia forearc)
+    'IU.KDAK': (57.783, -152.584),  # Kodiak Island, Alaska
+    'IU.COLA': (64.900, -147.850),  # College, Alaska
 }
 
 station_coords    = {}   # populated at startup
 station_inventory = {}   # key → obspy Inventory with instrument response
 
-def fetch_station_coords():
-    """Fetch FDSN coords + instrument response (level=response); fall back gracefully."""
-    global station_coords
+def _fetch_coords_from(fdsn_client_name, station_list):
+    """Try to fetch FDSN coords + response for a list of (net, sta) pairs."""
+    from obspy.clients.fdsn import Client
     try:
-        from obspy.clients.fdsn import Client
-        client = Client("GEOFON")
-        for net, sta in STATIONS:
-            key = f"{net}.{sta}"
+        client = Client(fdsn_client_name)
+    except Exception as e:
+        print(f"  [fdsn] {fdsn_client_name} client init failed: {e}", flush=True)
+        client = None
+    for net, sta in station_list:
+        key = f"{net}.{sta}"
+        fetched = False
+        if client:
             try:
                 inv = client.get_stations(network=net, station=sta, level="response")
                 st = inv[0][0]
                 station_coords[key]    = (st.latitude, st.longitude)
                 station_inventory[key] = inv
                 print(f"  coords {key}: {st.latitude:.3f}°N {st.longitude:.3f}°E (FDSN+response)", flush=True)
+                fetched = True
             except Exception:
-                # Response fetch failed; try coords-only
                 try:
-                    from obspy.clients.fdsn import Client as C2
-                    inv_s = C2("GEOFON").get_stations(network=net, station=sta, level="station")
+                    inv_s = client.get_stations(network=net, station=sta, level="station")
                     st = inv_s[0][0]
                     station_coords[key] = (st.latitude, st.longitude)
                     print(f"  coords {key}: {st.latitude:.3f}°N {st.longitude:.3f}°E (FDSN, no response)", flush=True)
+                    fetched = True
                 except Exception:
-                    if key in KNOWN_COORDS:
-                        station_coords[key] = KNOWN_COORDS[key]
-                        lat, lon = KNOWN_COORDS[key]
-                        print(f"  coords {key}: {lat:.3f}°N {lon:.3f}°E (hardcoded)", flush=True)
-                    else:
-                        print(f"  coords {key}: unknown — will skip in localization", flush=True)
-    except Exception:
-        for net, sta in STATIONS:
+                    pass
+        if not fetched:
+            if key in KNOWN_COORDS:
+                station_coords[key] = KNOWN_COORDS[key]
+                lat, lon = KNOWN_COORDS[key]
+                print(f"  coords {key}: {lat:.3f}°N {lon:.3f}°E (hardcoded)", flush=True)
+            else:
+                print(f"  coords {key}: unknown — will skip in localization", flush=True)
+
+def fetch_station_coords():
+    """Fetch FDSN coords + instrument response; fall back to hardcoded gracefully."""
+    global station_coords
+    try:
+        if STATIONS:
+            print(f"  [geofon] fetching {len(STATIONS)} station(s)...", flush=True)
+            _fetch_coords_from("GEOFON", STATIONS)
+        if IRIS_STATIONS:
+            print(f"  [iris] fetching {len(IRIS_STATIONS)} station(s)...", flush=True)
+            _fetch_coords_from("IRIS", IRIS_STATIONS)
+    except Exception as e:
+        print(f"  [fdsn] fetch error: {e} — using hardcoded fallback", flush=True)
+        for net, sta in ALL_STATIONS:
             key = f"{net}.{sta}"
             if key in KNOWN_COORDS:
                 station_coords[key] = KNOWN_COORDS[key]
@@ -480,7 +515,7 @@ def station_key(net, sta):
     return f"{net}.{sta}"
 
 def init_station_state():
-    for net, sta in STATIONS:
+    for net, sta in ALL_STATIONS:
         k = station_key(net, sta)
         station_rings[k]     = {ch: collections.deque(maxlen=2000) for ch in CHANNELS}
         station_strides[k]   = 0
@@ -534,6 +569,7 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
             print(f"  Lead time:  +{P_LEAD_S}s before P-arrival", flush=True)
 
             # Attempt epicenter localization
+            is_teleseismic = False
             arrivals = [(k, t) for k, t in station_first_arr.items() if t is not None]
             if len(arrivals) >= LOC_MIN_STA:
                 try:
@@ -541,12 +577,14 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
                     if loc:
                         lat_e, lon_e, t0_e, rms = loc
                         epicenter_latlon = (lat_e, lon_e)
+                        is_teleseismic = rms > 15.0
                         origin_ts = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(t0_e))
                         ns = 'N' if lat_e >= 0 else 'S'
                         ew = 'E' if lon_e >= 0 else 'W'
                         sta_used = [k for k, _ in arrivals if k in station_coords]
+                        tele_str = '  [TELESEISMIC?]' if is_teleseismic else ''
                         print(f"  Epicenter:  {abs(lat_e):.2f}°{ns} {abs(lon_e):.2f}°{ew}  "
-                              f"(rms={rms:.1f}s, {len(sta_used)} stations)", flush=True)
+                              f"(rms={rms:.1f}s, {len(sta_used)} stations){tele_str}", flush=True)
                         print(f"  Origin:     {origin_ts}  (est.)", flush=True)
                     else:
                         n_known = sum(1 for k, _ in arrivals if k in station_coords)
@@ -567,6 +605,7 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
                 conf=conf,
                 logit_gap=logit_gap,
                 epicenter=epicenter_latlon,
+                teleseismic=is_teleseismic if epicenter_latlon else False,
             )
             sensor_state.add_detection(det_rec)
 
@@ -992,9 +1031,13 @@ function update(){
       // epicenter chip — clickable to fly map to location
       let epiChip='';
       if(det.epicenter){
-        const [la,lo]=det.epicenter;
-        const ns=la>=0?'N':'S', ew=lo>=0?'E':'W';
-        epiChip=`<button class="chip chip-epi" onclick="flyToEpi(${la},${lo})" title="Fly map to epicenter" style="cursor:pointer;border:none;font-family:inherit">&#x1F4CD; ${Math.abs(la).toFixed(1)}°${ns} ${Math.abs(lo).toFixed(1)}°${ew}</button>`;
+        if(det.teleseismic){
+          epiChip=`<span class="chip chip-epi" title="Localization unreliable (high residual) — likely distant teleseismic source" style="opacity:.7">&#x1F310; teleseismic</span>`;
+        } else {
+          const [la,lo]=det.epicenter;
+          const ns=la>=0?'N':'S', ew=lo>=0?'E':'W';
+          epiChip=`<button class="chip chip-epi" onclick="flyToEpi(${la},${lo})" title="Fly map to epicenter" style="cursor:pointer;border:none;font-family:inherit">&#x1F4CD; ${Math.abs(la).toFixed(1)}°${ns} ${Math.abs(lo).toFixed(1)}°${ew}</button>`;
+        }
       }
       // catalog icon — right-aligned checkmark/cross
       let usgsIcon='';
@@ -1041,7 +1084,7 @@ function update(){
     detMarkers.forEach(m=>map.removeLayer(m));
     detMarkers.length=0;
     d.detections.forEach(det=>{
-      if(!det.epicenter)return;
+      if(!det.epicenter||det.teleseismic)return;
       const [la,lo]=det.epicenter;
       const mb=det.mb||4;
       const r=Math.max(4,Math.min(14,(mb-2)*3+4));
@@ -1050,8 +1093,8 @@ function update(){
         .bindPopup(`${det.ts}<br>${det.stations.join(', ')}<br>${mbLabel}`).addTo(map);
       detMarkers.push(m);
     });
-    // flyTo newest epicenter when it first appears
-    const newestEpi=dets.find(det=>det.epicenter);
+    // flyTo newest non-teleseismic epicenter when it first appears
+    const newestEpi=dets.find(det=>det.epicenter&&!det.teleseismic);
     if(newestEpi && newestEpi.ts!==lastFlyTs){
       lastFlyTs=newestEpi.ts;
       const [la,lo]=newestEpi.epicenter;
@@ -1218,8 +1261,8 @@ def run_tui():
             time.sleep(1)
 
 # ── SeedLink client ────────────────────────────────────────────────────────────
-def seedlink_loop(models):
-    """Connect to SeedLink, stream data, run inference. Retries forever."""
+def seedlink_loop(server, stations, models):
+    """Connect to a SeedLink server, stream data for given stations, run inference. Retries forever."""
     from obspy.clients.seedlink.easyseedlink import EasySeedLinkClient
 
     class Sensor(EasySeedLinkClient):
@@ -1259,12 +1302,12 @@ def seedlink_loop(models):
             conf, mag_est, logit_gap = ensemble_predict(models, normalize_window(window))
             on_inference(net, sta, conf, mag_est, logit_gap, time.time())
 
-    print(f"\nConnecting to {SEEDLINK_SERVER}...", flush=True)
+    print(f"\nConnecting to {server} ({len(stations)} station(s))...", flush=True)
     backoff = 5
     while True:
         try:
-            client = Sensor(SEEDLINK_SERVER)
-            for net, sta in STATIONS:
+            client = Sensor(server)
+            for net, sta in stations:
                 for ch in CHANNELS:
                     client.select_stream(net, sta, ch)
             backoff = 5
@@ -1273,7 +1316,8 @@ def seedlink_loop(models):
             print("\nStopped.", flush=True)
             break
         except BaseException as e:
-            print(f"[{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}] Connection error ({type(e).__name__}): {e}", flush=True)
+            print(f"[{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}] [{server}] "
+                  f"Connection error ({type(e).__name__}): {e}", flush=True)
             print(f"  Retrying in {backoff}s...", flush=True)
             time.sleep(backoff)
             backoff = min(backoff * 2, 300)
@@ -1293,29 +1337,42 @@ def run_sensor(models):
         fetch_station_coords()
     except Exception as e:
         print(f"  coords fetch failed ({e}) — using hardcoded fallback", flush=True)
-        for net, sta in STATIONS:
+        for net, sta in ALL_STATIONS:
             key = f"{net}.{sta}"
             if key in KNOWN_COORDS:
                 station_coords[key] = KNOWN_COORDS[key]
 
-    station_list = ', '.join(f"{n}.{s}" for n, s in STATIONS)
+    station_list = ', '.join(f"{n}.{s}" for n, s in ALL_STATIONS)
     print(f"  Stations:  {station_list}", flush=True)
     print(f"  Channels:  {CHANNELS}", flush=True)
-    print(f"  Threshold: {THRESHOLD}  |  Consensus: {N_CONSENSUS}/{len(STATIONS)} in {CONSENSUS_WINDOW:.0f}s", flush=True)
+    print(f"  Threshold: {THRESHOLD}  |  Consensus: {N_CONSENSUS}/{len(ALL_STATIONS)} in {CONSENSUS_WINDOW:.0f}s", flush=True)
     print(f"  Cooldown:  {ALERT_COOLDOWN}s  |  P-vel: {P_VEL_KM_S} km/s", flush=True)
     print(f"  Localize:  {LOC_MIN_STA}+ stations required", flush=True)
 
     start_web_server()
 
+    # Build per-server station groups; always run GEOFON, optionally IRIS
+    server_groups = [(SEEDLINK_SERVER, STATIONS)]
+    if IRIS_STATIONS:
+        server_groups.append((IRIS_SERVER, IRIS_STATIONS))
+
     if TUI_MODE:
-        # SeedLink runs in a daemon thread; TUI takes the main thread
         print("TUI mode — starting Rich display...", flush=True)
-        sl_thread = threading.Thread(target=seedlink_loop, args=(models,), daemon=True, name='seedlink')
-        sl_thread.start()
+        for srv, stas in server_groups:
+            t = threading.Thread(target=seedlink_loop, args=(srv, stas, models),
+                                 daemon=True, name=f'seedlink-{srv.split(":")[0]}')
+            t.start()
         run_tui()
+    elif len(server_groups) == 1:
+        print("Ready. Ctrl+C to stop.\n", flush=True)
+        seedlink_loop(server_groups[0][0], server_groups[0][1], models)
     else:
         print("Ready. Ctrl+C to stop.\n", flush=True)
-        seedlink_loop(models)
+        for srv, stas in server_groups[1:]:
+            t = threading.Thread(target=seedlink_loop, args=(srv, stas, models),
+                                 daemon=True, name=f'seedlink-{srv.split(":")[0]}')
+            t.start()
+        seedlink_loop(server_groups[0][0], server_groups[0][1], models)
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
