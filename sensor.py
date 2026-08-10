@@ -1849,11 +1849,13 @@ def start_web_server():
             if not dets:
                 return jsonify({'response_type': 'in_channel', 'text': 'No detections on record.'})
             lines = []
+            epicenters = []
             for d in reversed(dets):
                 mb_str  = f"mb={d['mb']:.1f}" if d.get('mb') is not None else 'mb=?'
                 epi_str = ''
                 if d.get('epicenter'):
                     lat, lon = d['epicenter']
+                    epicenters.append((lat, lon))
                     ns = 'N' if lat >= 0 else 'S'
                     ew = 'E' if lon >= 0 else 'W'
                     epi_str = f" | {abs(lat):.1f}°{ns} {abs(lon):.1f}°{ew}"
@@ -1862,8 +1864,25 @@ def start_web_server():
                     u = d['usgs']
                     usgs_str = f" → M{u['mag']} {u['place']}"
                 lines.append(f"`{d['ts']}` {mb_str} conf={d['conf']:.3f}{epi_str}{usgs_str}")
-            return jsonify({'response_type': 'in_channel',
-                'text': f'*Last {len(dets)} detections:*\n' + '\n'.join(lines)})
+            text_block = f'*Last {len(dets)} detections:*\n' + '\n'.join(lines)
+            blocks = [{'type': 'section', 'text': {'type': 'mrkdwn', 'text': text_block}}]
+            if epicenters:
+                # Build OSM static map URL with markers for each epicenter
+                marker_str = '|'.join(f'{lat},{lon},red-pushpin' for lat, lon in epicenters)
+                # Center on mean position, zoom 2 for global view
+                clat = sum(e[0] for e in epicenters) / len(epicenters)
+                clon = sum(e[1] for e in epicenters) / len(epicenters)
+                map_url = (
+                    f'https://staticmap.openstreetmap.de/staticmap.php'
+                    f'?center={clat:.2f},{clon:.2f}&zoom=2&size=600x300'
+                    f'&maptype=mapnik&markers={marker_str}'
+                )
+                blocks.append({
+                    'type': 'image',
+                    'image_url': map_url,
+                    'alt_text': f'Epicenter map — {len(epicenters)} location(s)',
+                })
+            return jsonify({'response_type': 'in_channel', 'blocks': blocks})
 
         elif sub == 'usgs':
             # Show recent events from the sig-watcher's seen set
