@@ -1029,7 +1029,7 @@ function flyToEpi(lat,lon,ts){
   applyRowSelection();
   applyMarkerSelection();
   map.getPane('overlayPane').style.visibility='hidden';
-  map.flyTo([lat,lon],6,{duration:2.5});
+  map.flyTo([lat,lon],5,{duration:2.5});
   map.once('moveend',()=>{map.getPane('overlayPane').style.visibility='';applyMarkerSelection();});
 }
 // audio alert
@@ -1080,15 +1080,15 @@ function update(){
     document.getElementById('last-update').textContent='updated '+new Date().toLocaleTimeString();
     // stations
     const sDiv=document.getElementById('stations');
-    sDiv.innerHTML='';
     const sCoords=%(station_coords_json)s;
+    let sHtml='';
     Object.entries(d.stations).sort((a,b)=>b[1].conf-a[1].conf).forEach(([k,s])=>{
       const pct=Math.round(s.conf*100);
       const col=confColor(s.conf);
       const coord=sCoords[k]?`${sCoords[k][0].toFixed(2)}°N ${sCoords[k][1].toFixed(2)}°E`:'coords unknown';
       const cardTitle=`${k}\n${coord}\nconf: ${s.conf.toFixed(4)}\nlast sample: ${fmtLocal(new Date(s.last_ts*1000).toISOString())}`;
       const barTitle=`threshold: %(threshold)s | current: ${s.conf.toFixed(3)}`;
-      sDiv.innerHTML+=`<div class="station" title="${cardTitle}">
+      sHtml+=`<div class="station" title="${cardTitle}">
         <div class="sta-row"><span class="sta-name">${k}</span>
         <span class="sta-conf" style="color:${col}">${s.conf.toFixed(3)}</span></div>
         <div class="conf-bar" title="${barTitle}"><div class="conf-fill" style="width:${pct}%;background:${col}"></div></div>
@@ -1096,15 +1096,16 @@ function update(){
       </div>`;
       if(sCoords[k] && !staMarkers[k]){
         const [lat,lon]=sCoords[k];
-        staMarkers[k]=L.circleMarker([lat,lon],{radius:6,color:'#58a6ff',fillColor:'#58a6ff',fillOpacity:.9})
+        staMarkers[k]=L.circleMarker([lat,lon],{radius:4,color:'#3a6fa8',weight:1,fillColor:'#58a6ff',fillOpacity:.9})
           .bindTooltip(`<b>${k}</b><br>${coord}`,{permanent:false,direction:'top'}).addTo(map);
       }
       if(staMarkers[k]){
         const mc=confColor(s.conf);
-        staMarkers[k].setStyle({color:mc,fillColor:mc});
+        staMarkers[k].setStyle({color:mc,fillColor:mc,fillOpacity:.9});
         staMarkers[k].setTooltipContent(`<b>${k}</b><br>${coord}<br>conf: ${s.conf.toFixed(3)}`);
       }
     });
+    if(sDiv.innerHTML!==sHtml)sDiv.innerHTML=sHtml;
     // detections
     const dDiv=document.getElementById('detections');
     const dets=[...d.detections].reverse();
@@ -1232,7 +1233,7 @@ function update(){
       applyRowSelection();
       const [la,lo]=newestEpi.epicenter;
       map.getPane('overlayPane').style.visibility='hidden';
-      map.flyTo([la,lo],7,{duration:2.5});
+      map.flyTo([la,lo],5,{duration:2.5});
       map.once('moveend',()=>{map.getPane('overlayPane').style.visibility='';applyMarkerSelection();});
     }
     // fullscreen overlay: station list + latest detection
