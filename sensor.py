@@ -656,6 +656,30 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
             station_status[key] = now
 
 # ── USGS ComCat validation ─────────────────────────────────────────────────────
+def _score_catalog_event(feat_lat, feat_lon, feat_origin_unix, p_arrivals):
+    """
+    Mean absolute residual (seconds) between observed P-arrivals and the
+    arrivals predicted by this candidate event using each station's known
+    coordinates and P_VEL_KM_S.  Stations without known coords are skipped.
+    Falls back to absolute difference between origin time and earliest P minus
+    a 600 s nominal travel time when no station coordinates are available.
+    Lower score = better match.
+    """
+    residuals = []
+    for sta, obs_t in p_arrivals.items():
+        if sta not in station_coords:
+            continue
+        sta_lat, sta_lon = station_coords[sta]
+        dist_km = haversine_km(feat_lat, feat_lon, sta_lat, sta_lon)
+        expected_t = feat_origin_unix + dist_km / P_VEL_KM_S
+        residuals.append(abs(obs_t - expected_t))
+    if residuals:
+        return sum(residuals) / len(residuals)
+    # Fallback: score by deviation from a 600 s nominal travel time
+    min_arr = min(p_arrivals.values()) if p_arrivals else feat_origin_unix + 600
+    return abs((min_arr - feat_origin_unix) - 600)
+
+
 def query_usgs_event(det_unix, p_arrivals):
     """
     Search USGS ComCat for earthquakes that could explain this detection.
@@ -669,7 +693,7 @@ def query_usgs_event(det_unix, p_arrivals):
     url = (
         f'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson'
         f'&starttime={t0}&endtime={t1}'
-        f'&minmagnitude={USGS_MIN_MAG}&orderby=magnitude-desc&limit=5'
+        f'&minmagnitude={USGS_MIN_MAG}&orderby=magnitude-desc&limit=10'
     )
     try:
         with urllib.request.urlopen(url, timeout=15) as resp:
@@ -677,7 +701,11 @@ def query_usgs_event(det_unix, p_arrivals):
         feats = data.get('features', [])
         if not feats:
             return None
-        f = feats[0]   # highest magnitude in window
+        # Pick the candidate whose predicted P-arrivals best match observations
+        def score(feat):
+            c = feat['geometry']['coordinates']
+            return _score_catalog_event(c[1], c[0], feat['properties']['time'] / 1000, p_arrivals)
+        f = min(feats, key=score)
         coords = f['geometry']['coordinates']
         p = f['properties']
         return {
@@ -733,7 +761,7 @@ def query_emsc_event(det_unix, p_arrivals):
     url = (
         f'https://www.seismicportal.eu/fdsnws/event/1/query?format=json'
         f'&starttime={t0}&endtime={t1}'
-        f'&minmagnitude={EMSC_MIN_MAG}&orderby=magnitude-desc&limit=5'
+        f'&minmagnitude={EMSC_MIN_MAG}&orderby=magnitude-desc&limit=10'
         f'&minlatitude=25&maxlatitude=75&minlongitude=-30&maxlongitude=60'
     )
     try:
@@ -742,7 +770,12 @@ def query_emsc_event(det_unix, p_arrivals):
         feats = data.get('features', [])
         if not feats:
             return None
-        f = feats[0]
+        def score(feat):
+            c = feat['geometry']['coordinates']
+            origin = feat['properties'].get('time')
+            origin_unix = origin / 1000 if isinstance(origin, (int, float)) else 0
+            return _score_catalog_event(c[1], c[0], origin_unix, p_arrivals)
+        f = min(feats, key=score)
         coords = f['geometry']['coordinates']
         p = f['properties']
         return {
