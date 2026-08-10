@@ -4,6 +4,8 @@ services:
     image: seismic-sensor:latest
     restart: unless-stopped
     env_file: .env
+    ports:
+      - "8080:8080"
     logging:
       driver: "json-file"
       options:

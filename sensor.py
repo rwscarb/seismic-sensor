@@ -678,6 +678,7 @@ function update(){
     const dDiv=document.getElementById('detections');
     const dets=[...d.detections].reverse();
     if(!dets.length){dDiv.innerHTML='<div class="no-data">No detections yet</div>';return}
+    const escAttr=s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
     dDiv.innerHTML=dets.slice(0,20).map(det=>{
       const mb=det.mb!=null?`<span class="det-mb">mb=${det.mb.toFixed(1)}</span>`:'<span style="color:#6e7681">mb…</span>';
       let epi='';
@@ -685,13 +686,15 @@ function update(){
         const [la,lo]=det.epicenter;
         epi=`<span class="det-epi"> ${Math.abs(la).toFixed(1)}°${la>=0?'N':'S'} ${Math.abs(lo).toFixed(1)}°${lo>=0?'E':'W'}</span>`;
       }
+      const place=det.usgs?(det.usgs.place||''):'';
+      const magType=det.usgs?(det.usgs.magType||''):'';
       const detTitle=`${det.ts}\nstations: ${det.stations.join(', ')}\nconf: ${det.conf.toFixed(4)}  logit gap: ${(det.logit_gap||0).toFixed(1)}`
-        +(det.epicenter?`\nepi: ${det.epicenter[0].toFixed(2)}°N ${det.epicenter[1].toFixed(2)}°E`:'')
+        +(det.epicenter?`\nepi: ${det.epicenter[0].toFixed(2)}N ${det.epicenter[1].toFixed(2)}E`:'')
         +(det.mb!=null?`\nmb=${det.mb.toFixed(1)} (IASPEI body-wave)`:'\nmb pending...')
-        +(det.usgs?`\nUSGS: M${det.usgs.mag}${det.usgs.magType} — ${det.usgs.place}`:'\nUSGS lookup pending...');
+        +(det.usgs?`\nUSGS: M${det.usgs.mag}${magType} - ${place}`:'\nUSGS lookup pending...');
       let usgsStr='';
-      if(det.usgs){usgsStr=`<span style="color:#a371f7"> ·M${det.usgs.mag}${det.usgs.magType} ${det.usgs.place.split(',')[0]}</span>`}
-      return `<div class="det" title="${detTitle}">
+      if(det.usgs){usgsStr=`<span style="color:#a371f7"> ·M${det.usgs.mag}${magType} ${place.split(',')[0]}</span>`}
+      return `<div class="det" title="${escAttr(detTitle)}">
         <span class="det-time">${det.ts}</span><br>
         <span class="det-sta">${det.stations.join(', ')}</span>  ${mb}${epi}${usgsStr}
       </div>`;
