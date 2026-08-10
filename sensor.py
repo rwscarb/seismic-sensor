@@ -1074,6 +1074,17 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 .det-deploy-sep::before,.det-deploy-sep::after{content:'';flex:1;border-top:1px solid #2a1f00}
 .chip{font-size:10px;border-radius:3px;padding:1px 5px;font-weight:bold;white-space:nowrap}
 .fault-tip{background:#1a1209;border:1px solid #e36209;color:#e8c07a;font-size:10px;padding:2px 6px;border-radius:3px;white-space:nowrap}
+.det-tip{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:7px 10px;box-shadow:0 4px 16px rgba(0,0,0,.6);font-size:11px;color:#c9d1d9;white-space:nowrap;pointer-events:none}
+.det-tip .tip-time{color:#8b949e;font-size:10px;letter-spacing:.3px;font-variant-numeric:tabular-nums}
+.det-tip .tip-mb{font-size:14px;font-weight:600;letter-spacing:.05em}
+.det-tip .tip-mb.high{color:#f85149}.det-tip .tip-mb.mid{color:#d29922}.det-tip .tip-mb.low{color:#58a6ff}
+.det-tip .tip-stas{color:#8b949e;font-size:10px;margin-top:3px}
+.det-tip .tip-loc{color:#6e7681;font-size:10px;margin-top:2px}
+.leaflet-tooltip.det-tip::before{display:none}
+.sta-tip{background:#0d1117;border:1px solid #21262d;border-radius:5px;padding:5px 9px;box-shadow:0 3px 12px rgba(0,0,0,.5);font-size:10px;color:#c9d1d9;white-space:nowrap;pointer-events:none}
+.sta-tip .tip-key{color:#58a6ff;font-weight:600;font-size:11px}
+.sta-tip .tip-conf{margin-top:2px}
+.leaflet-tooltip.sta-tip::before{display:none}
 .chip-mb-low{color:#3fb950;background:#0d2a15}
 .chip-mb-mid{color:#d29922;background:#2a1f00}
 .chip-mb-high{color:#f85149;background:#2d1216}
@@ -1358,13 +1369,18 @@ function update(){
       if(sCoords[k] && !staMarkers[k]){
         const [lat,lon]=sCoords[k];
         staMarkers[k]=L.circleMarker([lat,lon],{radius:4,color:'#3a6fa8',weight:1,fillColor:'#58a6ff',fillOpacity:.9})
-          .bindTooltip(`<b>${k}</b><br>${coord}`,{permanent:false,direction:'top'}).addTo(map);
+          .bindTooltip(`<div class="sta-tip"><span class="tip-key">${k}</span><div class="tip-conf">${coord}</div></div>`,
+            {permanent:false,direction:'top',className:'sta-tip'}).addTo(map);
       }
       if(staMarkers[k]){
         const mc=confColor(s.conf);
         if(staMarkers[k].options.fillColor!==mc)
           staMarkers[k].setStyle({color:mc,fillColor:mc,fillOpacity:.9});
-        const tip=`<b>${k}</b><br>${coord}<br>conf: ${s.conf.toFixed(3)}`;
+        const confPct=Math.round(s.conf*100);
+        const confColor2=confColor(s.conf);
+        const tip=`<div class="sta-tip"><span class="tip-key">${k}</span><div class="tip-conf">${coord}</div>`
+          +`<div style="margin-top:3px;color:${confColor2};font-size:10px">conf ${confPct}%`
+          +(s.last_ts?` &middot; ${fmtAge(s.last_ts)} ago`:'')+'</div></div>';
         if(staMarkers[k]._tooltip&&staMarkers[k]._tooltip._content!==tip)
           staMarkers[k].setTooltipContent(tip);
       }
@@ -1494,8 +1510,17 @@ function update(){
       const mb=det.mb||4;
       const r=Math.max(4,Math.min(14,(mb-2)*3+4));
       const mbLabel=det.mb?(det.mb_local?'local':det.mb_approx?'mb~'+det.mb.toFixed(1):'mb='+det.mb.toFixed(1)):'mb pending';
+      const mbClass=mb>=5?'high':mb>=4?'mid':'low';
+      const locStr=det.epicenter?`${Math.abs(det.epicenter[0]).toFixed(2)}°${det.epicenter[0]>=0?'N':'S'} `
+        +`${Math.abs(det.epicenter[1]).toFixed(2)}°${det.epicenter[1]>=0?'E':'W'}`:'';
+      const tipHtml=`<div class="det-tip">`
+        +`<div class="tip-time">${fmtLocal(det.ts)}</div>`
+        +`<div class="tip-mb ${mbClass}">${mbLabel}</div>`
+        +`<div class="tip-stas">${det.stations.join(' · ')}</div>`
+        +(locStr?`<div class="tip-loc">${locStr}</div>`:'')
+        +'</div>';
       const m=L.circleMarker([la,lo],{radius:r,color:'#c0392b',weight:1,fillColor:'#f85149',fillOpacity:.85})
-        .bindPopup(`${fmtLocal(det.ts)}<br>${det.stations.join(', ')}<br>${mbLabel}`).addTo(map);
+        .bindTooltip(tipHtml,{sticky:false,direction:'top',className:'det-tip'}).addTo(map);
       kept.push({m,ts:det.ts,r});
     });
     detMarkers.length=0;kept.forEach(x=>detMarkers.push(x));
