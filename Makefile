@@ -1,4 +1,4 @@
-.PHONY: build up down logs restart deploy shell
+.PHONY: build dev down logs restart deploy shell
 
 include .env
 export
@@ -6,8 +6,8 @@ export
 build:
 	docker compose build --no-cache
 
-up:
-	docker compose up -d
+dev:
+	docker compose up
 
 down:
 	docker compose down
