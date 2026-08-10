@@ -1,4 +1,4 @@
-.PHONY: build dev down logs restart deploy shell
+.PHONY: build dev down logs restart deploy train shell
 
 include .env
 export
@@ -30,6 +30,9 @@ fly-logs:
 
 fly-env:
 	@grep -v '^#' .env | xargs fly secrets set
+
+train:
+	python train.py --out checkpoints/ $(TRAIN_ARGS)
 
 shell:
 	docker compose exec seismic-sensor bash
