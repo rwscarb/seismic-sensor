@@ -769,7 +769,7 @@ body.fs-mode #map-wrap{flex:1;margin:0}
 body.fs-mode #map{height:100%!important;border-radius:0}
 body.fs-mode header{z-index:501;position:relative}
 /* fullscreen overlay */
-#fs-overlay{display:none;position:absolute;top:10px;left:10px;z-index:1001;background:#161b22cc;border:1px solid #30363d;border-radius:6px;padding:10px 14px;min-width:220px;max-width:280px;backdrop-filter:blur(6px);font-size:11px;pointer-events:none}
+#fs-overlay{display:none;position:fixed;top:55px;left:10px;z-index:1001;background:#161b22cc;border:1px solid #30363d;border-radius:6px;padding:10px 14px;min-width:220px;max-width:280px;backdrop-filter:blur(6px);font-size:11px;pointer-events:none}
 body.fs-mode #fs-overlay{display:block}
 #fs-overlay h3{font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
 .fso-sta{display:flex;justify-content:space-between;margin-bottom:4px;align-items:center}
@@ -1013,7 +1013,33 @@ def start_web_server():
 
     app = Flask(__name__)
     import logging
+    from flask import request, Response
     logging.getLogger('werkzeug').setLevel(logging.ERROR)
+
+    # Simple in-memory per-IP rate limiter: max 60 req/min on API endpoint
+    _rate_buckets = {}
+    _rate_lock    = threading.Lock()
+    _RATE_LIMIT   = 60    # requests
+    _RATE_WINDOW  = 60.0  # seconds
+
+    def _check_rate(ip):
+        now = time.time()
+        with _rate_lock:
+            if ip not in _rate_buckets:
+                _rate_buckets[ip] = []
+            bucket = _rate_buckets[ip]
+            # prune old entries
+            _rate_buckets[ip] = [t for t in bucket if now - t < _RATE_WINDOW]
+            if len(_rate_buckets[ip]) >= _RATE_LIMIT:
+                return False
+            _rate_buckets[ip].append(now)
+            # prune stale IPs periodically
+            if len(_rate_buckets) > 500:
+                cutoff = now - _RATE_WINDOW
+                for k in list(_rate_buckets):
+                    if all(t < cutoff for t in _rate_buckets[k]):
+                        del _rate_buckets[k]
+            return True
 
     @app.route('/')
     def index():
@@ -1021,6 +1047,9 @@ def start_web_server():
 
     @app.route('/api/state')
     def state():
+        ip = request.headers.get('Fly-Client-IP') or request.remote_addr or 'unknown'
+        if not _check_rate(ip):
+            return Response('rate limited', status=429, mimetype='text/plain')
         return jsonify(sensor_state.to_dict())
 
     t = threading.Thread(
