@@ -624,13 +624,14 @@ def query_usgs_event(det_unix, p_arrivals):
         coords = f['geometry']['coordinates']
         p = f['properties']
         return {
-            'mag':     p.get('mag'),
-            'magType': p.get('magType', '?'),
-            'place':   p.get('place', '?'),
-            'time':    p['time'] / 1000,
-            'lat':     coords[1],
-            'lon':     coords[0],
-            'depth':   coords[2],
+            'mag':      p.get('mag'),
+            'magType':  p.get('magType', '?'),
+            'place':    p.get('place', '?'),
+            'time':     p['time'] / 1000,
+            'lat':      coords[1],
+            'lon':      coords[0],
+            'depth':    coords[2],
+            'event_id': f.get('id', ''),
         }
     except Exception:
         return None
@@ -661,14 +662,15 @@ def query_emsc_event(det_unix, p_arrivals):
         coords = f['geometry']['coordinates']
         p = f['properties']
         return {
-            'mag':     p.get('mag') or p.get('magnitude'),
-            'magType': p.get('magtype') or p.get('magnitudetype', '?'),
-            'place':   p.get('flynn_region') or p.get('region', '?'),
-            'time':    p['time'] / 1000 if isinstance(p.get('time'), (int, float)) else 0,
-            'lat':     coords[1],
-            'lon':     coords[0],
-            'depth':   coords[2] if len(coords) > 2 else 0,
-            'source':  'emsc',
+            'mag':      p.get('mag') or p.get('magnitude'),
+            'magType':  p.get('magtype') or p.get('magnitudetype', '?'),
+            'place':    p.get('flynn_region') or p.get('region', '?'),
+            'time':     p['time'] / 1000 if isinstance(p.get('time'), (int, float)) else 0,
+            'lat':      coords[1],
+            'lon':      coords[0],
+            'depth':    coords[2] if len(coords) > 2 else 0,
+            'source':   'emsc',
+            'event_id': p.get('unid') or f.get('id', ''),
         }
     except Exception:
         return None
@@ -905,7 +907,14 @@ function update(){
         const srcLabel=src==='emsc'?'EMSC':'USGS';
         const iconColor=src==='emsc'?'#39c5cf':'#a371f7';
         usgsTitle=`${srcLabel}: M${det.usgs.mag}${mt} — ${place}`;
-        usgsIcon=`<span class="det-usgs-icon" style="color:${iconColor}" title="${escAttr(usgsTitle)}">&#10003;</span>`;
+        const eid=det.usgs.event_id||'';
+        const href=eid?(src==='emsc'
+          ?`https://www.seismicportal.eu/eventdetails.html?unid=${encodeURIComponent(eid)}`
+          :`https://earthquake.usgs.gov/earthquakes/eventpage/${encodeURIComponent(eid)}/executive`):'';
+        const inner=`<span style="color:${iconColor}">&#10003;</span>`;
+        usgsIcon=href
+          ?`<a class="det-usgs-icon" href="${href}" target="_blank" rel="noopener" title="${escAttr(usgsTitle)}" style="text-decoration:none">${inner}</a>`
+          :`<span class="det-usgs-icon" title="${escAttr(usgsTitle)}">${inner}</span>`;
       } else if(det.usgs_checked){
         usgsTitle=`No match in USGS (M%(usgs_min_mag)s+) or EMSC (M%(emsc_min_mag)s+) for this window`;
         usgsIcon=`<span class="det-usgs-icon" style="color:#30363d" title="${escAttr(usgsTitle)}">&#10007;</span>`;
