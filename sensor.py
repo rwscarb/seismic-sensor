@@ -11,9 +11,18 @@ All config via environment variables (see .env / fly.toml).
 
 STATIONS format: "GE.APE,GE.MORC,GE.BORG,GE.KBS"  (NET.STA pairs, comma-separated)
 """
-import os, time, math, collections, warnings, threading, dataclasses, json
+import os
+import time
+import math
+import collections
+import warnings
+import threading
+import dataclasses
+import json
 import numpy as np
-import torch, torch.nn as nn, torch.nn.functional as F
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 warnings.filterwarnings('ignore')
 
 SERVER_START_TIME = time.time()  # recorded once at process start; used as deploy boundary in UI
@@ -1476,7 +1485,7 @@ def run_sensor(models):
         print(f"Waiting {startup_delay}s for network...", flush=True)
         time.sleep(startup_delay)
 
-    print(f"\nFetching station coordinates...", flush=True)
+    print("\nFetching station coordinates...", flush=True)
     try:
         fetch_station_coords()
     except Exception as e:
@@ -1518,7 +1527,7 @@ def run_sensor(models):
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
-    print(f"Seismic Detection Sensor (multi-station consensus + TDOA localization)", flush=True)
+    print("Seismic Detection Sensor (multi-station consensus + TDOA localization)", flush=True)
     print(f"  model:   StreamingNet {N_SEEDS}-seed ensemble (H-{P_LEAD_S}s, mean-conf)", flush=True)
     print(f"  device:  {DEVICE}", flush=True)
     print(f"\nLoading checkpoints from {CHECKPOINT_DIR}...", flush=True)

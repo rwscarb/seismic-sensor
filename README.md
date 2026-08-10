@@ -102,4 +102,4 @@ All parameters are set via environment variables (see `fly.toml` and `.env.examp
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+AGPL-3.0-or-later — see [LICENSE](LICENSE)
