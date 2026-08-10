@@ -4,8 +4,6 @@ services:
     image: seismic-sensor:latest
     restart: unless-stopped
     env_file: .env
-    volumes:
-      - ./checkpoints:/checkpoints:ro
     logging:
       driver: "json-file"
       options:
