@@ -812,7 +812,7 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 .sta-conf{font-size:11px}
 .conf-bar{height:4px;border-radius:2px;background:#21262d;margin-top:2px}
 .conf-fill{height:100%;border-radius:2px;transition:width .5s}
-.det{display:flex;align-items:center;gap:4px;padding:5px 0;border-bottom:1px solid #21262d;font-size:11px;min-height:26px;min-width:0;overflow:hidden}
+.det{display:flex;align-items:center;gap:4px;padding:5px 4px 5px 4px;border-bottom:1px solid #21262d;font-size:11px;min-height:26px;min-width:0;overflow:hidden}
 .det:last-child{border-bottom:none}
 .det-selected{background:#0d2a15!important;box-shadow:inset 2px 0 0 #3fb950}
 .det-time{color:#8b949e;font-size:10px;white-space:nowrap;flex-shrink:0;font-variant-numeric:tabular-nums}
