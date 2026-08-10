@@ -825,6 +825,7 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 .det-deploy-sep{display:flex;align-items:center;gap:6px;padding:5px 0;color:#d29922;font-size:10px;letter-spacing:.5px}
 .det-deploy-sep::before,.det-deploy-sep::after{content:'';flex:1;border-top:1px solid #2a1f00}
 .chip{font-size:10px;border-radius:3px;padding:1px 5px;font-weight:bold;white-space:nowrap}
+.fault-tip{background:#1a1209;border:1px solid #e36209;color:#e8c07a;font-size:10px;padding:2px 6px;border-radius:3px;white-space:nowrap}
 .chip-mb-low{color:#3fb950;background:#0d2a15}
 .chip-mb-mid{color:#d29922;background:#2a1f00}
 .chip-mb-high{color:#f85149;background:#2d1216}
@@ -865,6 +866,7 @@ body.fs-mode #fs-overlay{display:block}
   <span id="cfg" title="SeedLink: %(seedlink)s">%(cfg_text)s</span>
   <span id="last-event-summary"></span>
   <span id="last-update">connecting...</span>
+  <button id="faults-btn" title="Toggle active fault overlay (GEM Global Active Faults)" style="background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;margin-left:4px">&#9889; faults</button>
   <button id="mute-btn" title="Toggle audio alerts" style="background:#161b22;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;margin-left:4px">&#128266; on</button>
   <select id="tz-sel" title="Display timezone" style="background:#161b22;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:2px 5px;font-size:11px;cursor:pointer;margin-left:6px">
     <option value="auto">Auto TZ</option>
@@ -913,6 +915,37 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
 const staMarkers={}, detMarkers=[];
 let lastFlyTs=null, selectedDetTs=null, _pulseIv=null, _pulsePhase=0;
 let filterConfirmed=false, detDisplayLimit=20;
+// fault overlay — lazy loaded from GEM Global Active Faults dataset
+let _faultLayer=null, _faultLoading=false, _faultOn=false;
+const _FAULT_URL='https://raw.githubusercontent.com/GEMScienceTools/gem-global-active-faults/master/geojson/gem_active_faults.geojson';
+const _faultsBtn=document.getElementById('faults-btn');
+function _setFaultBtnState(){
+  _faultsBtn.style.color=_faultOn?'#d29922':'#6e7681';
+  _faultsBtn.style.borderColor=_faultOn?'#d29922':'#30363d';
+  _faultsBtn.textContent=_faultLoading?'⟳ loading…':(_faultOn?'⚡ faults ✓':'⚡ faults');
+}
+_faultsBtn.addEventListener('click',async()=>{
+  if(_faultLoading)return;
+  _faultOn=!_faultOn;
+  if(!_faultOn){
+    if(_faultLayer){map.removeLayer(_faultLayer);}
+    _setFaultBtnState();return;
+  }
+  if(_faultLayer){_faultLayer.addTo(map);_setFaultBtnState();return;}
+  _faultLoading=true;_setFaultBtnState();
+  try{
+    const r=await fetch(_FAULT_URL);
+    const geojson=await r.json();
+    _faultLayer=L.geoJSON(geojson,{
+      style:{color:'#e36209',weight:1,opacity:0.45},
+      onEachFeature:(f,layer)=>{
+        const n=f.properties&&(f.properties.name||f.properties.fault_name||f.properties.FaultName||'');
+        if(n)layer.bindTooltip(n,{sticky:true,className:'fault-tip'});
+      }
+    }).addTo(map);
+  }catch(e){_faultOn=false;alert('Failed to load fault data: '+e.message);}
+  _faultLoading=false;_setFaultBtnState();
+});
 function showMoreDets(){detDisplayLimit+=50;}
 (()=>{
   const btn=document.getElementById('filter-btn');
