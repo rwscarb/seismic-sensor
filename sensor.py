@@ -143,20 +143,24 @@ def on_inference(net, sta, conf, mag_est, now):
 
         if consensus_met and now - last_alert[0] > ALERT_COOLDOWN:
             last_alert[0] = now
+            recent_detections.clear()  # reset so coda windows don't re-trigger
+            mag_display = max(-2.0, min(9.9, mag_est))
             station_list = ', '.join(sorted(stations_fired))
             print(f"\n{'='*60}", flush=True)
             print(f"  DETECTION  {ts}", flush=True)
             print(f"  Stations:   {station_list}  ({len(stations_fired)}/{N_CONSENSUS} consensus)", flush=True)
             print(f"  Confidence: {conf:.4f}  (threshold={THRESHOLD})", flush=True)
-            print(f"  Mag est:    M{mag_est:.1f}", flush=True)
+            print(f"  Mag est:    M{mag_display:.1f}  (uncalibrated)", flush=True)
             print(f"  Lead time:  +0.4s before P-arrival", flush=True)
             print(f"{'='*60}\n", flush=True)
         elif not consensus_met:
-            print(f"  [{ts}] {key} CANDIDATE conf={conf:.3f} mag=M{mag_est:.1f} "
+            mag_display = max(-2.0, min(9.9, mag_est))
+            print(f"  [{ts}] {key} CANDIDATE conf={conf:.3f} mag=M{mag_display:.1f} "
                   f"(waiting for {N_CONSENSUS - len(stations_fired)} more station(s))", flush=True)
     else:
         if now - station_status[key] > 10.0:
-            print(f"[{ts}] {key}  conf={conf:.3f}  mag=M{mag_est:.1f}", flush=True)
+            mag_display = max(-2.0, min(9.9, mag_est))
+            print(f"[{ts}] {key}  conf={conf:.3f}  mag=M{mag_display:.1f}", flush=True)
             station_status[key] = now
 
 # ── SeedLink client ────────────────────────────────────────────────────────────
