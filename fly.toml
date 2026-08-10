@@ -4,15 +4,16 @@ primary_region = 'sjc'
 [build]
 
 [env]
-  ALERT_COOLDOWN = '5.0'
-  CHANNELS = 'HHZ,HHN,HHE'
-  CHECKPOINT_DIR = '/checkpoints'
-  NETWORK = 'GE'
-  N_SEEDS = '3'
-  SEEDLINK_SERVER = 'geofon.gfz-potsdam.de:18000'
-  STATION = 'APE'
-  THRESHOLD = '0.835'
+  SEEDLINK_SERVER  = 'geofon.gfz-potsdam.de:18000'
+  STATIONS         = 'GE.APE'
+  CHANNELS         = 'HHZ,HHN,HHE'
+  THRESHOLD        = '0.835'
+  N_SEEDS          = '3'
+  ALERT_COOLDOWN   = '60.0'
+  N_CONSENSUS      = '1'
+  CONSENSUS_WINDOW = '120'
+  CHECKPOINT_DIR   = '/checkpoints'
 
 [[vm]]
-  size = 'shared-cpu-1x'
+  size   = 'shared-cpu-1x'
   memory = '1gb'

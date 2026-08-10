@@ -1,7 +1,7 @@
 services:
   seismic-sensor:
     build: .
-    image: seismic-sensor:latest
+    image: rwscarb/seismic-sensor:latest
     restart: unless-stopped
     env_file: .env
     logging:

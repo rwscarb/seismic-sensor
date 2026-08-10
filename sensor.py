@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """
-Live Seismic Detection Sensor — inference-only, Docker-ready.
+Live Seismic Detection Sensor — multi-station consensus, inference-only, Docker-ready.
 
 Loads pre-trained StreamingNet ensemble from /checkpoints/,
-connects to a SeedLink server, and streams real-time detection.
+connects to a SeedLink server, runs inference on each station independently,
+and alerts only when N_CONSENSUS stations agree within CONSENSUS_WINDOW seconds.
 
-All config via environment variables (see Dockerfile / docker-compose.yml).
+All config via environment variables (see .env / fly.toml).
+
+STATIONS format: "GE.APE,GE.MORC"  (NET.STA pairs, comma-separated)
 """
 import os, time, collections, warnings
 import numpy as np
@@ -13,25 +16,36 @@ import torch, torch.nn as nn, torch.nn.functional as F
 warnings.filterwarnings('ignore')
 
 # ── Config from env ────────────────────────────────────────────────────────────
-CHECKPOINT_DIR  = os.environ.get('CHECKPOINT_DIR', './checkpoints')
-SEEDLINK_SERVER = os.environ.get('SEEDLINK_SERVER', 'liss.usgs.gov:4000')
-NETWORK         = os.environ.get('NETWORK', 'IU')
-STATION         = os.environ.get('STATION', 'MAJO')
-CHANNELS        = os.environ.get('CHANNELS', 'HHZ,HHN,HHE').split(',')
-THRESHOLD       = float(os.environ.get('THRESHOLD', '0.835'))
-N_SEEDS         = int(os.environ.get('N_SEEDS', '3'))
-ALERT_COOLDOWN  = float(os.environ.get('ALERT_COOLDOWN', '5.0'))
+CHECKPOINT_DIR   = os.environ.get('CHECKPOINT_DIR', './checkpoints')
+SEEDLINK_SERVER  = os.environ.get('SEEDLINK_SERVER', 'geofon.gfz-potsdam.de:18000')
+STATIONS_RAW     = os.environ.get('STATIONS', 'GE.APE')   # NET.STA,NET.STA,...
+CHANNELS         = os.environ.get('CHANNELS', 'HHZ,HHN,HHE').split(',')
+THRESHOLD        = float(os.environ.get('THRESHOLD', '0.835'))
+N_SEEDS          = int(os.environ.get('N_SEEDS', '3'))
+ALERT_COOLDOWN   = float(os.environ.get('ALERT_COOLDOWN', '60.0'))
+N_CONSENSUS      = int(os.environ.get('N_CONSENSUS', '1'))   # stations required
+CONSENSUS_WINDOW = float(os.environ.get('CONSENSUS_WINDOW', '120.0'))  # seconds
 
-DEVICE        = 'cpu'       # inference-only; no GPU needed
+# Parse stations: "GE.APE,GE.MORC" → [('GE','APE'), ('GE','MORC')]
+STATIONS = []
+for s in STATIONS_RAW.split(','):
+    s = s.strip()
+    if '.' in s:
+        net, sta = s.split('.', 1)
+        STATIONS.append((net.strip(), sta.strip()))
+    else:
+        STATIONS.append(('GE', s))
+
+DEVICE        = 'cpu'
 K             = 128
 CYCLES        = 1
-WIN_SAMPLES   = 100         # 1.0s at 100sps
-STRIDE        = 10          # infer every 0.1s
+WIN_SAMPLES   = 100
+STRIDE        = 10
 TARGET_SRATE  = 100.0
 BUF_DECAY     = 0.876
 BUF_STRENGTH  = 1.429
 
-# ── Model (must match training exactly) ───────────────────────────────────────
+# ── Model ─────────────────────────────────────────────────────────────────────
 class ConvBlock(nn.Module):
     def __init__(self, ci, co, k=7):
         super().__init__()
@@ -62,8 +76,7 @@ class StreamingNet(nn.Module):
         with torch.no_grad():
             xb = torch.tensor(window_np[None], dtype=torch.float32)
             logits, mag = self(xb)
-        conf = float(F.softmax(logits, dim=1)[0, 1])
-        return conf, float(mag[0])
+        return float(F.softmax(logits, dim=1)[0, 1]), float(mag[0])
 
 # ── Load ensemble ─────────────────────────────────────────────────────────────
 def load_ensemble():
@@ -71,11 +84,7 @@ def load_ensemble():
     for seed in range(N_SEEDS):
         ckpt = os.path.join(CHECKPOINT_DIR, f'seed_{seed}.pt')
         if not os.path.exists(ckpt):
-            raise FileNotFoundError(
-                f"Checkpoint not found: {ckpt}\n"
-                f"Train with: python live_seismic_demo.py --train-only\n"
-                f"Then copy ~/seismic_ensemble/seed_*.pt to ./checkpoints/"
-            )
+            raise FileNotFoundError(f"Checkpoint not found: {ckpt}")
         m = StreamingNet(perm_seed=seed)
         m.load_state_dict(torch.load(ckpt, map_location='cpu'))
         m.eval()
@@ -87,82 +96,127 @@ def ensemble_predict(models, window_np):
     confs, mags = zip(*[m.predict(window_np) for m in models])
     return float(np.mean(confs)), float(np.mean(mags))
 
-# ── Sliding window ─────────────────────────────────────────────────────────────
-def normalize_window(buf_zne):
-    w = buf_zne.copy()
+def normalize_window(w):
+    w = w.copy()
     for i in range(3):
         w[i] /= w[i].std() + 1e-6
     return w
+
+# ── Multi-station consensus state ─────────────────────────────────────────────
+# station_key → deque of ring buffers per channel
+station_rings   = {}   # key → {ch: deque}
+station_strides = {}   # key → int (stride counter)
+station_status  = {}   # key → float (last status print time)
+
+# Recent detections for consensus: deque of (timestamp, station_key, conf, mag)
+recent_detections = collections.deque()
+
+last_alert = [0.0]
+
+def station_key(net, sta):
+    return f"{net}.{sta}"
+
+def init_station_state():
+    for net, sta in STATIONS:
+        k = station_key(net, sta)
+        station_rings[k]   = {ch: collections.deque(maxlen=500) for ch in CHANNELS}
+        station_strides[k] = 0
+        station_status[k]  = 0.0
+
+def check_consensus(now):
+    """Return True if N_CONSENSUS distinct stations fired within CONSENSUS_WINDOW."""
+    cutoff = now - CONSENSUS_WINDOW
+    recent_detections_pruned = [d for d in recent_detections if d[0] >= cutoff]
+    recent_detections.clear()
+    recent_detections.extend(recent_detections_pruned)
+    stations_fired = set(d[1] for d in recent_detections)
+    return len(stations_fired) >= N_CONSENSUS, stations_fired
+
+def on_inference(net, sta, conf, mag_est, now):
+    """Called after each inference step for a station."""
+    ts = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now))
+    key = station_key(net, sta)
+
+    if conf >= THRESHOLD:
+        recent_detections.append((now, key, conf, mag_est))
+        consensus_met, stations_fired = check_consensus(now)
+
+        if consensus_met and now - last_alert[0] > ALERT_COOLDOWN:
+            last_alert[0] = now
+            station_list = ', '.join(sorted(stations_fired))
+            print(f"\n{'='*60}", flush=True)
+            print(f"  DETECTION  {ts}", flush=True)
+            print(f"  Stations:   {station_list}  ({len(stations_fired)}/{N_CONSENSUS} consensus)", flush=True)
+            print(f"  Confidence: {conf:.4f}  (threshold={THRESHOLD})", flush=True)
+            print(f"  Mag est:    M{mag_est:.1f}", flush=True)
+            print(f"  Lead time:  +0.4s before P-arrival", flush=True)
+            print(f"{'='*60}\n", flush=True)
+        elif not consensus_met:
+            print(f"  [{ts}] {key} CANDIDATE conf={conf:.3f} mag=M{mag_est:.1f} "
+                  f"(waiting for {N_CONSENSUS - len(stations_fired)} more station(s))", flush=True)
+    else:
+        if now - station_status[key] > 10.0:
+            print(f"[{ts}] {key}  conf={conf:.3f}  mag=M{mag_est:.1f}", flush=True)
+            station_status[key] = now
 
 # ── SeedLink client ────────────────────────────────────────────────────────────
 def run_sensor(models):
     from obspy.clients.seedlink.easyseedlink import EasySeedLinkClient
 
-    ring = {ch: collections.deque(maxlen=500) for ch in CHANNELS}  # 5s buffer
-    last_alert = [0.0]
-    stride_counter = [0]
-    last_status = [0.0]
+    init_station_state()
 
     class Sensor(EasySeedLinkClient):
         def on_data(self, trace):
-            ch = trace.stats.channel
-            if ch not in ring:
+            net = trace.stats.network
+            sta = trace.stats.station
+            ch  = trace.stats.channel
+            key = station_key(net, sta)
+
+            if key not in station_rings or ch not in CHANNELS:
                 return
 
             data = trace.data.astype(np.float32)
-            sr = trace.stats.sampling_rate
+            sr   = trace.stats.sampling_rate
             if abs(sr - TARGET_SRATE) > 1.0:
                 from obspy import Trace as OTrace
                 t = OTrace(data=trace.data.copy(), header=trace.stats)
                 t.resample(TARGET_SRATE)
                 data = t.data.astype(np.float32)
 
+            ring = station_rings[key]
             ring[ch].extend(data)
-            stride_counter[0] += len(data)
+            station_strides[key] += len(data)
 
             if min(len(ring[c]) for c in CHANNELS) < WIN_SAMPLES:
                 return
-            if stride_counter[0] < STRIDE:
+            if station_strides[key] < STRIDE:
                 return
-            stride_counter[0] = 0
+            station_strides[key] = 0
 
             window = np.array([
-                list(ring[CHANNELS[0]])[-WIN_SAMPLES:],   # Z
-                list(ring[CHANNELS[1]])[-WIN_SAMPLES:],   # N
-                list(ring[CHANNELS[2]])[-WIN_SAMPLES:],   # E
+                list(ring[CHANNELS[0]])[-WIN_SAMPLES:],
+                list(ring[CHANNELS[1]])[-WIN_SAMPLES:],
+                list(ring[CHANNELS[2]])[-WIN_SAMPLES:],
             ], dtype=np.float32)
 
             conf, mag_est = ensemble_predict(models, normalize_window(window))
-            now = time.time()
-            ts = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
-
-            if conf >= THRESHOLD:
-                if now - last_alert[0] > ALERT_COOLDOWN:
-                    print(f"\n{'='*60}", flush=True)
-                    print(f"  DETECTION  {ts}", flush=True)
-                    print(f"  Station:    {NETWORK}.{STATION}", flush=True)
-                    print(f"  Confidence: {conf:.4f}  (threshold={THRESHOLD})", flush=True)
-                    print(f"  Mag est:    M{mag_est:.1f}", flush=True)
-                    print(f"  Lead time:  +0.4s before P-arrival", flush=True)
-                    print(f"{'='*60}\n", flush=True)
-                    last_alert[0] = now
-            elif now - last_status[0] > 10.0:
-                print(f"[{ts}] {NETWORK}.{STATION}  conf={conf:.3f}  mag_est=M{mag_est:.1f}", flush=True)
-                last_status[0] = now
+            on_inference(net, sta, conf, mag_est, time.time())
 
     print(f"\nConnecting to {SEEDLINK_SERVER}...", flush=True)
-    print(f"  Station:   {NETWORK}.{STATION}", flush=True)
+    station_list = ', '.join(f"{n}.{s}" for n, s in STATIONS)
+    print(f"  Stations:  {station_list}", flush=True)
     print(f"  Channels:  {CHANNELS}", flush=True)
-    print(f"  Threshold: {THRESHOLD}  |  Cooldown: {ALERT_COOLDOWN}s", flush=True)
-    print(f"  Window:    {WIN_SAMPLES}smp @ {TARGET_SRATE:.0f}Hz  |  Stride: {STRIDE}smp", flush=True)
+    print(f"  Threshold: {THRESHOLD}  |  Consensus: {N_CONSENSUS}/{len(STATIONS)} in {CONSENSUS_WINDOW:.0f}s", flush=True)
+    print(f"  Cooldown:  {ALERT_COOLDOWN}s", flush=True)
     print("Ready. Ctrl+C to stop.\n", flush=True)
 
     backoff = 5
     while True:
         try:
             client = Sensor(SEEDLINK_SERVER)
-            for ch in CHANNELS:
-                client.select_stream(NETWORK, STATION, ch)
+            for net, sta in STATIONS:
+                for ch in CHANNELS:
+                    client.select_stream(net, sta, ch)
             backoff = 5
             client.run()
         except KeyboardInterrupt:
@@ -176,9 +230,9 @@ def run_sensor(models):
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
-    print(f"Seismic Detection Sensor", flush=True)
-    print(f"  model: StreamingNet {N_SEEDS}-seed ensemble (H-0.4s, mean-conf)", flush=True)
-    print(f"  device: {DEVICE}", flush=True)
+    print(f"Seismic Detection Sensor (multi-station consensus)", flush=True)
+    print(f"  model:   StreamingNet {N_SEEDS}-seed ensemble (H-0.4s, mean-conf)", flush=True)
+    print(f"  device:  {DEVICE}", flush=True)
     print(f"\nLoading checkpoints from {CHECKPOINT_DIR}...", flush=True)
     models = load_ensemble()
     print(f"  {N_SEEDS} models loaded.\n", flush=True)
