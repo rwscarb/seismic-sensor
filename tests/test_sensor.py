@@ -144,10 +144,10 @@ class TestSensorState(unittest.TestCase):
         self.assertEqual(len(self.state.detections), 1)
         self.assertEqual(self.state.detections[0].conf, 0.91)
 
-    def test_detection_capped_at_100(self):
-        for i in range(105):
+    def test_detection_capped_at_500(self):
+        for i in range(505):
             self.state.add_detection(sensor.DetectionSnap(unix_ts=float(i), conf=0.9))
-        self.assertEqual(len(self.state.detections), 100)
+        self.assertEqual(len(self.state.detections), 500)
 
     def test_update_mb(self):
         det = sensor.DetectionSnap(unix_ts=5000.0, conf=0.9)
