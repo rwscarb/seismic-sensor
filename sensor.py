@@ -814,7 +814,16 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
 const staMarkers={}, detMarkers=[];
 let lastFlyTs=null;
 function confColor(c){return c>=0.835?'#3fb950':c>=0.5?'#d29922':'#6e7681'}
-function fmtAge(ts){const s=Math.round(Date.now()/1000-ts);return s<60?s+'s':Math.round(s/60)+'m'}
+function fmtAge(ts){const s=Math.round(Date.now()/1000-ts);return s<60?s+'s':s<3600?Math.round(s/60)+'m':Math.round(s/3600)+'h'}
+const _tzAbbr=(()=>{try{return new Intl.DateTimeFormat('en',{timeZoneName:'short'}).formatToParts(new Date()).find(p=>p.type==='timeZoneName').value;}catch(e){return '';}})();
+function fmtLocal(isoStr){
+  const d=new Date(isoStr);
+  const now=new Date();
+  const timeStr=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  const sameDay=d.toDateString()===now.toDateString();
+  const prefix=sameDay?'':d.toLocaleDateString([],{month:'short',day:'numeric'})+' ';
+  return `${prefix}${timeStr} ${_tzAbbr}`;
+}
 // fullscreen toggle
 document.getElementById('fs-btn').addEventListener('click',()=>{
   document.body.classList.toggle('fs-mode');
@@ -867,7 +876,7 @@ function update(){
     const escAttr=s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
     const mbChipClass=mb=>mb>=7?'chip-mb-high':mb>=5?'chip-mb-mid':'chip-mb-low';
     const serverStart=d.server_start||0;
-    const deployLabel=(()=>{const dt=new Date(serverStart*1000);const t=dt.toUTCString();return t.substring(t.indexOf(':')-2,t.indexOf(':')+6)+'Z';})();
+    const deployLabel=(()=>{const dt=new Date(serverStart*1000);return dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false})+' '+_tzAbbr;})();
     let sepInserted=false;
     const newHtml=dets.slice(0,20).map(det=>{
       let sep='';
@@ -875,8 +884,8 @@ function update(){
         sepInserted=true;
         sep=`<div class="det-deploy-sep" title="Process restarted / new version deployed at ${new Date(serverStart*1000).toUTCString()}">deployed ${deployLabel}</div>`;
       }
-      // time — show just HH:MM:SSZ to save width; full ts in tooltip
-      const tPart=det.ts.length>=19?det.ts.substring(11,19)+'Z':det.ts;
+      // time — local time in card, full UTC in tooltip
+      const tPart=fmtLocal(det.ts);
       // mb chip (center)
       let mbChip='';
       if(det.mb!=null){
@@ -974,7 +983,7 @@ function update(){
       const mbStr=ld.mb!=null?(ld.mb_local?'local':ld.mb_approx?`mb~${ld.mb.toFixed(1)}`:`mb=${ld.mb.toFixed(1)}`):'mb…';
       const usgsStr=ld.usgs?(()=>{const src=(ld.usgs.source||'usgs').toUpperCase();return `${src}: M${ld.usgs.mag} ${(ld.usgs.place||'').split(',')[0]}`;})():ld.usgs_checked?'no catalog match':'catalog pending';
       fsoDet.innerHTML=`<div style="color:#8b949e;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Latest Detection</div>
-        <div style="color:#e6edf3">${ld.ts.substring(11,19)}Z</div>
+        <div style="color:#e6edf3">${fmtLocal(ld.ts)}</div>
         <div style="color:#58a6ff;margin:2px 0">${ld.stations.join(' · ')}</div>
         <div style="color:#d29922">${mbStr}</div>
         ${ld.epicenter?`<div style="color:#d29922">${ld.epicenter[0].toFixed(2)}N ${ld.epicenter[1].toFixed(2)}E</div>`:''}
