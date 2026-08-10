@@ -865,7 +865,8 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 .det-selected{background:#0d2a15!important;box-shadow:inset 2px 0 0 #3fb950}
 .det:hover:not(.det-selected){background:#1c2128}
 .det-muted{opacity:0.55}
-.det-verified{box-shadow:inset 0 0 0 2px #2ea043;border-bottom-color:#2ea043}
+.det-verified{position:relative;z-index:1;border:1px solid #2ea043!important}
+.det-verified+.det-verified{margin-top:-1px}
 .det-row1{display:flex;justify-content:space-between;align-items:baseline;gap:4px}
 .det-row2{display:flex;align-items:center;gap:4px;margin-top:3px;min-width:0}
 .det-time{color:#8b949e;font-size:10px;white-space:nowrap;font-variant-numeric:tabular-nums}
