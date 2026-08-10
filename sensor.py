@@ -812,14 +812,16 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 .sta-conf{font-size:11px}
 .conf-bar{height:4px;border-radius:2px;background:#21262d;margin-top:2px}
 .conf-fill{height:100%;border-radius:2px;transition:width .5s}
-.det{display:flex;align-items:center;gap:4px;padding:5px 4px 5px 4px;border-bottom:1px solid #21262d;font-size:11px;min-height:26px;min-width:0;overflow:hidden}
+.det{display:flex;flex-direction:column;padding:5px 4px 5px 4px;border-bottom:1px solid #21262d;font-size:11px;min-width:0;overflow:hidden}
 .det:last-child{border-bottom:none}
 .det-selected{background:#0d2a15!important;box-shadow:inset 2px 0 0 #3fb950}
-.det-time{color:#8b949e;font-size:10px;white-space:nowrap;flex-shrink:0;font-variant-numeric:tabular-nums}
-.det-stas{color:#58a6ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
-.det-chips-inline{display:flex;gap:3px;flex-shrink:0}
-.det-usgs-icon{flex-shrink:0;font-size:13px;line-height:1;cursor:default}.det-usgs-icon[href]{cursor:pointer}
-.det-age{color:#6e7681;font-size:10px;white-space:nowrap;flex-shrink:0;text-align:right;min-width:28px}
+.det-row1{display:flex;justify-content:space-between;align-items:center;gap:4px}
+.det-row2{display:flex;align-items:center;gap:3px;margin-top:2px;min-width:0}
+.det-time{color:#8b949e;font-size:10px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.det-stas{color:#58a6ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;font-size:10px}
+.det-chips-inline{display:flex;gap:3px;flex-shrink:0;align-items:center}
+.det-usgs-icon{flex-shrink:0;font-size:12px;line-height:1;cursor:default}.det-usgs-icon[href]{cursor:pointer}
+.det-age{color:#6e7681;font-size:10px;white-space:nowrap}
 .det-deploy-sep{display:flex;align-items:center;gap:6px;padding:5px 0;color:#d29922;font-size:10px;letter-spacing:.5px}
 .det-deploy-sep::before,.det-deploy-sep::after{content:'';flex:1;border-top:1px solid #2a1f00}
 .chip{font-size:10px;border-radius:3px;padding:1px 5px;font-weight:bold;white-space:nowrap}
@@ -839,7 +841,8 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 #fs-btn:hover{color:#e6edf3;border-color:#58a6ff}
 body.fs-mode .grid{display:flex}
 body.fs-mode .right-col{position:fixed!important;top:50px;right:10px;bottom:10px;width:330px;z-index:1001;background:#161b22bb;backdrop-filter:blur(10px);border:1px solid #30363d;border-radius:8px;overflow:hidden;display:flex!important;flex-direction:column}
-body.fs-mode .right-col>.panel{border:none;border-radius:0;background:transparent;flex:1;overflow-y:auto;overflow-x:hidden}
+body.fs-mode .right-col .panel{border:none;border-radius:0;background:transparent;flex:1;overflow-y:auto;overflow-x:hidden}
+body.fs-mode .right-col .panel-hdr{background:transparent;border-bottom:1px solid #30363d}
 body.fs-mode #left-panel{position:fixed;inset:0;z-index:500;border-radius:0;padding:0;display:flex;flex-direction:column;border:none}
 body.fs-mode #left-panel>.panel-hdr,body.fs-mode #stations{display:none}
 body.fs-mode #map-wrap{flex:1;margin:0}
@@ -896,11 +899,11 @@ body.fs-mode #fs-overlay{display:block}
     </div>
   </div>
   <div class="right-col">
-    <div class="panel" style="flex:1;overflow:auto">
       <div class="panel-hdr"><h2>Detections</h2><span id="det-count" class="det-count"></span><button id="filter-btn" title="Show confirmed catalog matches only" style="margin-left:auto;background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">✓ confirmed</button></div>
+    <div class="panel" style="flex:1;overflow-y:auto;border:none;border-radius:0">
       <div id="detections"></div>
-      <div id="det-more" style="display:none;padding:6px 0;text-align:center"><button onclick="showMoreDets()" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:3px 10px;font-size:10px;cursor:pointer">show older</button></div>
     </div>
+    <div id="det-more" style="display:none;padding:6px 8px;border-top:1px solid #21262d"><button onclick="showMoreDets()" style="width:100%;background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:4px 10px;font-size:10px;cursor:pointer">↓ show older</button></div>
   </div>
 </div>
 <script>
@@ -909,7 +912,7 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
   {attribution:'&copy; OSM &copy; CARTO',subdomains:'abcd',maxZoom:19}).addTo(map);
 const staMarkers={}, detMarkers=[];
 let lastFlyTs=null, selectedDetTs=null, _pulseIv=null, _pulsePhase=0;
-let filterConfirmed=false, detDisplayLimit=100;
+let filterConfirmed=false, detDisplayLimit=20;
 function showMoreDets(){detDisplayLimit+=50;}
 (()=>{
   const btn=document.getElementById('filter-btn');
@@ -1119,7 +1122,7 @@ function update(){
         } else {
           const [la,lo]=det.epicenter;
           const ns=la>=0?'N':'S', ew=lo>=0?'E':'W';
-          epiChip=`<button class="chip chip-epi" onclick="event.stopPropagation();flyToEpi(${la},${lo},'${det.ts}')" title="Fly map to epicenter" style="cursor:pointer;border:none;font-family:inherit">&#x1F4CD; ${Math.abs(la).toFixed(1)}°${ns} ${Math.abs(lo).toFixed(1)}°${ew}</button>`;
+          epiChip=`<button class="chip chip-epi" onclick="event.stopPropagation();flyToEpi(${la},${lo},'${det.ts}')" title="${Math.abs(la).toFixed(2)}°${ns} ${Math.abs(lo).toFixed(2)}°${ew}" style="cursor:pointer;border:none;font-family:inherit">&#x1F4CD;</button>`;
         }
       }
       // catalog icon — right-aligned checkmark/cross
@@ -1158,11 +1161,8 @@ function update(){
       const rowClick=(!det.teleseismic&&det.epicenter)
         ?`onclick="flyToEpi(${det.epicenter[0]},${det.epicenter[1]},'${det.ts}')" style="cursor:pointer"`:'';
       return sep+`<div class="det${selCls}" data-ts="${det.ts}" ${rowClick} title="${escAttr(detTitle)}">
-        <span class="det-time">${tPart}</span>
-        <span class="det-stas">${det.stations.join(' · ')}</span>
-        <span class="det-chips-inline">${mbChip}${epiChip}</span>
-        ${usgsIcon}
-        <span class="det-age">${fmtAge(det.unix_ts)}</span>
+        <div class="det-row1"><span class="det-time">${tPart}</span><span class="det-age">${fmtAge(det.unix_ts)}</span></div>
+        <div class="det-row2"><span class="det-stas">${det.stations.join(' · ')}</span><span class="det-chips-inline">${mbChip}${epiChip}${usgsIcon}</span></div>
       </div>`;
     }).join('');
     if(dDiv.innerHTML!==newHtml)dDiv.innerHTML=newHtml;
