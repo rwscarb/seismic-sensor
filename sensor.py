@@ -48,6 +48,7 @@ TEMP_SCALE       = float(os.environ.get('TEMP_SCALE', '1.0'))   # temperature fo
 USGS_MIN_MAG      = float(os.environ.get('USGS_MIN_MAG', '4.0')) # min magnitude for USGS catalog lookup
 EMSC_MIN_MAG      = float(os.environ.get('EMSC_MIN_MAG', '2.0')) # min magnitude for EMSC fallback lookup
 SLACK_WEBHOOK_URL = os.environ.get('SLACK_WEBHOOK_URL', '')       # optional: post detection alerts to Slack
+UMAMI_SITE_ID    = os.environ.get('UMAMI_SITE_ID', '')            # optional: Umami analytics website ID
 DETECTIONS_PATH  = os.environ.get('DETECTIONS_PATH', '/tmp/detections.json')
 
 # Parse stations: "GE.APE,GE.MORC" → [('GE','APE'), ('GE','MORC')]
@@ -1106,6 +1107,7 @@ body.fs-mode #fs-overlay{display:block}
 .fso-bar-fill{height:100%;border-radius:2px}
 .fso-det{margin-top:8px;border-top:1px solid #21262d;padding-top:8px}
 </style>
+<script defer src="//u.fib896.com/script.js" data-website-id="%(umami_id)s"></script>
 </head>
 <body>
 <header>
@@ -1560,6 +1562,7 @@ def start_web_server():
         .replace('%(threshold)s',           str(THRESHOLD))
         .replace('%(usgs_min_mag)s',        str(USGS_MIN_MAG))
         .replace('%(emsc_min_mag)s',        str(EMSC_MIN_MAG))
+        .replace('%(umami_id)s',            UMAMI_SITE_ID)
     )
 
     app = Flask(__name__)
