@@ -188,13 +188,20 @@ class SensorState:
             snap = list(self.detections)
         _save_detections(snap)
 
+    def get_detection(self, ref_unix):
+        with self._lock:
+            for det in reversed(self.detections):
+                if abs(det.unix_ts - ref_unix) < 30:
+                    return det
+        return None
+
     def to_dict(self):
         with self._lock:
             return {
                 'stations': {k: dataclasses.asdict(v) for k, v in self.stations.items()},
                 'detections': [
                     {**dataclasses.asdict(d), 'stations': list(d.stations)}
-                    for d in self.detections[-30:]
+                    for d in self.detections[-200:]
                 ],
                 'now': time.time(),
                 'server_start': SERVER_START_TIME,
@@ -333,6 +340,99 @@ def ensemble_predict(models, window_np):
     gaps  = [r[2] for r in results]
     return float(np.mean(confs)), float(np.mean(mags)), float(np.mean(gaps))
 
+# ── PhaseNet pick refinement (SeisBench) ──────────────────────────────────────
+_phasenet = None
+
+def load_phasenet():
+    global _phasenet
+    try:
+        import seisbench.models as sbm
+        _phasenet = sbm.PhaseNet.from_pretrained("original")
+        _phasenet.eval()
+        print("  PhaseNet loaded (SeisBench pretrained)", flush=True)
+    except Exception as e:
+        print(f"  PhaseNet unavailable ({e}) — TDOA will use StreamingNet picks only", flush=True)
+
+# S-P time → distance (km). Wadati / IASP91 average for teleseismic P+S.
+# For Δ 10–100°: dist ≈ Δt_sp × 9.5  (V_P≈8.5, V_S≈4.8 km/s harmonic mean)
+_SP_KM_PER_S = 9.5
+
+def refine_picks_phasenet(p_arr_snapshot):
+    """
+    For each station that fired, extract a 30s window around its estimated P arrival
+    from the ring buffers, run PhaseNet, and return refined P picks and S-P distances.
+
+    Returns:
+      refined_p   : {key: unix_time}  — replaces raw StreamingNet picks where PhaseNet
+                                        has higher-confidence P (within ±3s of original)
+      sp_distances: {key: km}         — distance from S-P time, where S is detected
+    """
+    if _phasenet is None:
+        return dict(p_arr_snapshot), {}
+
+    from obspy import Trace as OTrace, Stream as OStream, UTCDateTime
+
+    refined_p    = dict(p_arr_snapshot)
+    sp_distances = {}
+
+    for key, p_est in p_arr_snapshot.items():
+        if key not in station_rings:
+            continue
+        ring = station_rings[key]
+        if any(len(ring.get(ch, [])) < int(30 * TARGET_SRATE) for ch in CHANNELS):
+            continue
+
+        buf_end   = time.time()
+        buf_start = buf_end - len(ring[CHANNELS[0]]) / TARGET_SRATE
+
+        # Extract [P - 5s, P + 25s] window (30s total = 3000 samples at 100 sps)
+        win_start  = p_est - 5.0
+        win_end    = p_est + 25.0
+        idx_start  = max(0, int((win_start - buf_start) * TARGET_SRATE))
+        idx_end    = min(len(ring[CHANNELS[0]]), int((win_end - buf_start) * TARGET_SRATE))
+        actual_start = buf_start + idx_start / TARGET_SRATE
+
+        try:
+            st = OStream()
+            for ch in CHANNELS:
+                data = np.array(list(ring[ch]), dtype=np.float32)[idx_start:idx_end]
+                if len(data) < 100:
+                    break
+                tr = OTrace(data=data)
+                tr.stats.network       = key.split('.')[0]
+                tr.stats.station       = key.split('.')[1]
+                tr.stats.channel       = ch
+                tr.stats.sampling_rate = TARGET_SRATE
+                tr.stats.starttime     = UTCDateTime(actual_start)
+                st.append(tr)
+            else:
+                picks = _phasenet.classify(st, batch_size=1).picks
+                p_picks = [pk for pk in picks if pk.phase == 'P' and pk.peak_value >= 0.4]
+                s_picks = [pk for pk in picks if pk.phase == 'S' and pk.peak_value >= 0.3]
+
+                if p_picks:
+                    best_p = max(p_picks, key=lambda pk: pk.peak_value)
+                    p_unix = best_p.peak_time.timestamp
+                    if abs(p_unix - p_est) <= 3.0:   # sanity check: within 3s of StreamingNet
+                        refined_p[key] = p_unix
+                        print(f"  [phasenet] {key} P refined by "
+                              f"{p_unix - p_est:+.2f}s (conf={best_p.peak_value:.2f})", flush=True)
+
+                if s_picks:
+                    best_s = max(s_picks, key=lambda pk: pk.peak_value)
+                    s_unix = best_s.peak_time.timestamp
+                    p_used = refined_p.get(key, p_est)
+                    sp_dt  = s_unix - p_used
+                    if 5.0 <= sp_dt <= 1200.0:    # sanity: 5s–20min S-P
+                        dist_km = sp_dt * _SP_KM_PER_S
+                        sp_distances[key] = dist_km
+                        print(f"  [phasenet] {key} S-P={sp_dt:.1f}s → "
+                              f"dist≈{dist_km:.0f}km (conf={best_s.peak_value:.2f})", flush=True)
+        except Exception as e:
+            print(f"  [phasenet] {key}: {e}", flush=True)
+
+    return refined_p, sp_distances
+
 def normalize_window(w):
     w = w.copy()
     for i in range(3):
@@ -348,16 +448,52 @@ def haversine_km(lat1, lon1, lat2, lon2):
     a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlam/2)**2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-def locate_epicenter(arrivals):
+# IASP91 P travel times (seconds) for shallow focus (h≈15 km), keyed by distance (degrees).
+# Source: Kennett & Engdahl (1991), interpolated from TauPy; values at 0° extrapolated to 0.
+_IASP91_DEG = np.array([0, 2, 5, 10, 15, 20, 25, 30, 35, 40,
+                         45, 50, 55, 60, 65, 70, 75, 80, 90, 100, 110, 120, 150, 180],
+                        dtype=np.float64)
+_IASP91_SEC = np.array([0, 27.0, 64.7, 130.7, 196.5, 256.8, 321.0, 383.5, 444.5, 507.0,
+                         566.7, 628.5, 689.2, 747.0, 802.5, 855.0, 905.0, 952.0, 1038.0,
+                         1116.0, 1185.0, 1250.0, 1390.0, 1510.0],
+                        dtype=np.float64)
+
+def p_travel_time_s(dist_km):
+    """IASP91 P travel time (seconds) via linear interpolation of tabulated values."""
+    dist_deg = min(max(dist_km / 111.195, 0.0), 180.0)
+    return float(np.interp(dist_deg, _IASP91_DEG, _IASP91_SEC))
+
+# Richter (1958) Q(Δ) table for body-wave magnitude; amplitude in µm.
+# We measure in nm, so subtract log10(1e6/1e9)=−3 → effectively subtract 3 from these values.
+_RICHTER_Q_DEG = np.array([2, 5, 10, 15, 20, 25, 30, 35, 40, 45,
+                             50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100],
+                            dtype=np.float64)
+_RICHTER_Q_VAL = np.array([3.96, 4.88, 5.26, 5.57, 5.84, 6.07, 6.24, 6.36, 6.44, 6.46,
+                             6.44, 6.38, 6.33, 6.27, 6.21, 6.14, 6.09, 6.04, 6.01, 5.99, 5.97],
+                            dtype=np.float64)
+
+def richter_q_nm(dist_deg):
+    """Richter (1958) Q(Δ) correction, adjusted for amplitude in nm (µm table − 3)."""
+    dist_deg = min(max(dist_deg, 2.0), 100.0)
+    return float(np.interp(dist_deg, _RICHTER_Q_DEG, _RICHTER_Q_VAL)) - 3.0
+
+
+def locate_epicenter(arrivals, sp_distances=None):
     """
-    arrivals: list of (station_key, p_arrival_unix)
-              p_arrival_unix = detection_time + P_LEAD_S (corrected for model horizon)
+    arrivals    : list of (station_key, p_arrival_unix)
+    sp_distances: optional {station_key: dist_km} from PhaseNet S-P picks
+
     Returns (lat, lon, origin_time_unix, rms_s) or None.
-    Requires scipy.
+
+    Method:
+      1. Global 5° grid search to find the basin of attraction.
+      2. Nelder-Mead refinement from the best grid point.
+      IASP91 P travel-time table is used instead of a fixed velocity.
+      When sp_distances are provided, they add distance-anchoring terms to the
+      cost that are independent of origin time — significantly reducing degeneracy.
     """
     from scipy.optimize import minimize
 
-    # Filter to stations with known coordinates
     obs = [(key, t) for key, t in arrivals if key in station_coords]
     if len(obs) < LOC_MIN_STA:
         return None
@@ -366,32 +502,59 @@ def locate_epicenter(arrivals):
     sta_lon  = np.array([station_coords[k][1] for k, _ in obs])
     arr_time = np.array([t for _, t in obs])
 
-    # Analytically solve for optimal t0 given lat/lon (reduces to 2-D search)
+    # Stations + known S-P distances (independent of origin time)
+    sp_keys = []
+    sp_km   = []
+    if sp_distances:
+        for k, d in sp_distances.items():
+            if k in station_coords:
+                sp_keys.append(k)
+                sp_km.append(d)
+
     def cost(params):
         lat0, lon0 = params
-        dists = np.array([haversine_km(lat0, lon0, sta_lat[i], sta_lon[i])
-                          for i in range(len(obs))])
-        travel = dists / P_VEL_KM_S
-        t0_opt = float(np.mean(arr_time - travel))
-        pred   = t0_opt + travel
-        return float(np.sum((pred - arr_time)**2))
+        dists    = np.array([haversine_km(lat0, lon0, sta_lat[i], sta_lon[i])
+                             for i in range(len(obs))])
+        travel   = np.array([p_travel_time_s(d) for d in dists])
+        t0_opt   = float(np.mean(arr_time - travel))
+        pred     = t0_opt + travel
+        tdoa_res = float(np.sum((pred - arr_time) ** 2))
 
-    # Initial guess: station centroid
-    lat0 = float(np.mean(sta_lat))
-    lon0 = float(np.mean(sta_lon))
+        # S-P distance constraint: penalise deviation from PhaseNet-derived distance.
+        # Weight chosen so one S-P constraint ≈ two TDOA constraints.
+        sp_res = 0.0
+        if sp_keys:
+            for k, target_km in zip(sp_keys, sp_km):
+                slat, slon = station_coords[k]
+                actual_km  = haversine_km(lat0, lon0, slat, slon)
+                sp_res += (actual_km - target_km) ** 2 / (target_km * 0.2) ** 2
+            sp_res *= (tdoa_res / max(len(obs), 1)) * 2
 
-    res = minimize(cost, [lat0, lon0], method='Nelder-Mead',
-                   options={'xatol': 0.05, 'fatol': 0.1, 'maxiter': 50000})
+        return tdoa_res + sp_res
+
+    # ── Stage 1: coarse global grid search at 5° resolution ──────────────────
+    best_cost  = float('inf')
+    best_start = (float(np.mean(sta_lat)), float(np.mean(sta_lon)))
+    for glat in range(-85, 91, 5):
+        for glon in range(-180, 181, 5):
+            c = cost((glat, glon))
+            if c < best_cost:
+                best_cost  = c
+                best_start = (glat, glon)
+
+    # ── Stage 2: Nelder-Mead refinement from best grid point ─────────────────
+    res = minimize(cost, best_start, method='Nelder-Mead',
+                   options={'xatol': 0.02, 'fatol': 0.05, 'maxiter': 100000})
 
     lat_e, lon_e = res.x
-    # Recover t0 analytically from final solution
-    dists_final = np.array([haversine_km(lat_e, lon_e, sta_lat[i], sta_lon[i])
-                            for i in range(len(obs))])
-    t0_e = float(np.mean(arr_time - dists_final / P_VEL_KM_S))
-    n = len(obs)
-    rms = math.sqrt(res.fun / n)
+    dists_final  = np.array([haversine_km(lat_e, lon_e, sta_lat[i], sta_lon[i])
+                              for i in range(len(obs))])
+    travel_final = np.array([p_travel_time_s(d) for d in dists_final])
+    t0_e = float(np.mean(arr_time - travel_final))
+    # RMS uses only TDOA residuals for interpretability
+    t0_pred = t0_e + travel_final
+    rms = math.sqrt(float(np.mean((t0_pred - arr_time) ** 2)))
 
-    # Clamp to valid range
     lat_e = max(-90.0, min(90.0, lat_e))
     lon_e = ((lon_e + 180) % 360) - 180
 
@@ -464,7 +627,7 @@ def estimate_mb(key, p_arrival_unix, epicenter_latlon):
         dist_deg = 45.0   # mid-range teleseismic assumption; ±1 mag unit uncertainty
         approx = True
 
-    Q = (2.0 + 0.013 * dist_deg) if dist_deg < 20.0 else (2.1 + 0.015 * dist_deg)
+    Q  = richter_q_nm(dist_deg)
     mb = max(0.0, min(10.0, math.log10(A / T) + Q))
     print(f"  [mb dbg] {key}: A={A:.1f}nm T={T:.2f}s A/T={A/T:.1f} Q={Q:.2f}({dist_deg:.0f}deg{'~' if approx else ''}) -> mb={mb:.1f}", flush=True)
     return round(mb, 1), ('approx' if approx else None), A
@@ -577,12 +740,15 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
             print(f"  Magnitude:  mb computing... (+{MB_DELAY_S:.0f}s)", flush=True)
             print(f"  Lead time:  +{P_LEAD_S}s before P-arrival", flush=True)
 
+            # Refine P picks and derive S-P distances via PhaseNet
+            refined_p, sp_dists = refine_picks_phasenet(p_arr_snapshot)
+
             # Attempt epicenter localization
             is_teleseismic = False
-            arrivals = [(k, t) for k, t in station_first_arr.items() if t is not None]
+            arrivals = [(k, t) for k, t in refined_p.items() if t is not None]
             if len(arrivals) >= LOC_MIN_STA:
                 try:
-                    loc = locate_epicenter(arrivals)
+                    loc = locate_epicenter(arrivals, sp_distances=sp_dists)
                     if loc:
                         lat_e, lon_e, t0_e, rms = loc
                         epicenter_latlon = (lat_e, lon_e)
@@ -629,7 +795,7 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
             # Launch deferred mb + USGS lookups in background
             threading.Thread(
                 target=report_mb_deferred,
-                args=(set(stations_fired), p_arr_snapshot, epicenter_latlon, now),
+                args=(set(stations_fired), refined_p, epicenter_latlon, now),
                 daemon=True,
             ).start()
             threading.Thread(
@@ -671,7 +837,7 @@ def _score_catalog_event(feat_lat, feat_lon, feat_origin_unix, p_arrivals):
             continue
         sta_lat, sta_lon = station_coords[sta]
         dist_km = haversine_km(feat_lat, feat_lon, sta_lat, sta_lon)
-        expected_t = feat_origin_unix + dist_km / P_VEL_KM_S
+        expected_t = feat_origin_unix + p_travel_time_s(dist_km)
         residuals.append(abs(obs_t - expected_t))
     if residuals:
         return sum(residuals) / len(residuals)
@@ -793,6 +959,33 @@ def query_emsc_event(det_unix, p_arrivals):
         return None
 
 
+CAL_LOG = os.environ.get('CAL_LOG', '/data/seismic_cal.jsonl')
+
+def _append_calibration(det_unix, catalog_event):
+    """Append a confirmed detection→catalog pair to the calibration log."""
+    det = sensor_state.get_detection(det_unix)
+    if det is None or catalog_event is None:
+        return
+    rec = {
+        'det_unix':    det_unix,
+        'det_lat':     det.epicenter[0] if det.epicenter else None,
+        'det_lon':     det.epicenter[1] if det.epicenter else None,
+        'det_mb':      det.mb,
+        'cat_lat':     catalog_event['lat'],
+        'cat_lon':     catalog_event['lon'],
+        'cat_mag':     catalog_event['mag'],
+        'cat_depth':   catalog_event.get('depth'),
+        'cat_source':  catalog_event.get('source', 'usgs'),
+    }
+    try:
+        os.makedirs(os.path.dirname(CAL_LOG), exist_ok=True)
+        with open(CAL_LOG, 'a') as f:
+            f.write(json.dumps(rec) + '\n')
+        print(f"  [cal] logged calibration record ({CAL_LOG})", flush=True)
+    except Exception as e:
+        print(f"  [cal] write failed: {e}", flush=True)
+
+
 def report_usgs_deferred(det_unix, p_arrivals):
     """Thread: queries USGS ~10s after detection, then EMSC if no match."""
     time.sleep(10)
@@ -806,6 +999,7 @@ def report_usgs_deferred(det_unix, p_arrivals):
         print(f"  [usgs {ts}] {abs(event['lat']):.2f}°{ns} {abs(event['lon']):.2f}°{ew}  "
               f"depth={event['depth']:.0f}km", flush=True)
         sensor_state.update_usgs(det_unix, event)
+        _append_calibration(det_unix, event)
         return
     print(f"  [usgs {ts}] no USGS match (M{USGS_MIN_MAG}+ in window) — trying EMSC", flush=True)
     event = query_emsc_event(det_unix, p_arrivals)
@@ -817,6 +1011,7 @@ def report_usgs_deferred(det_unix, p_arrivals):
         print(f"  [emsc {ts}] {abs(event['lat']):.2f}°{ns} {abs(event['lon']):.2f}°{ew}  "
               f"depth={event['depth']:.0f}km", flush=True)
         sensor_state.update_usgs(det_unix, event)
+        _append_calibration(det_unix, event)
     else:
         print(f"  [emsc {ts}] no EMSC match (M{EMSC_MIN_MAG}+ European window)", flush=True)
         sensor_state.update_usgs(det_unix, None)
@@ -1407,15 +1602,12 @@ def start_web_server():
 
     @app.route('/api/state')
     def state():
-        ip = request.headers.get('Fly-Client-IP') or request.remote_addr or 'unknown'
-        if not _check_rate(ip):
-            return Response('rate limited', status=429, mimetype='text/plain')
         data = sensor_state.to_dict()
         data['station_coords'] = {k: list(v) for k, v in station_coords.items()}
         return jsonify(data)
 
-    @app.route('/api/epcalc', methods=['POST'])
-    def epcalc():
+    @app.route('/api/localize', methods=['POST'])
+    def localize():
         """Compute epicenter from station arrival times.
 
         Body (JSON):
@@ -1628,4 +1820,6 @@ if __name__ == '__main__':
     print(f"\nLoading checkpoints from {CHECKPOINT_DIR}...", flush=True)
     models = load_ensemble()
     print(f"  {N_SEEDS} models loaded.\n", flush=True)
+    print("Loading PhaseNet (SeisBench)...", flush=True)
+    load_phasenet()
     run_sensor(models)

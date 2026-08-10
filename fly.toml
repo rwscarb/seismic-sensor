@@ -21,6 +21,7 @@ primary_region = 'fra'
   EMSC_MIN_MAG     = '2.0'
   IRIS_SERVER      = 'rtserve.iris.washington.edu:18000'
   IRIS_STATIONS    = 'IU.COR,CN.PGC,IU.KDAK,IU.COLA'
+  SEISBENCH_CACHE_ROOT = '/data/seisbench'
 
 [deploy]
   strategy   = "rolling"

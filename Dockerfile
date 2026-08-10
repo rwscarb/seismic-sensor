@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install PyTorch CPU-only first (separate index), then remaining deps — one cached layer
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
- && pip install --no-cache-dir obspy numpy scipy flask rich
+ && pip install --no-cache-dir obspy numpy scipy flask rich seisbench
 
 COPY sensor.py .
 
