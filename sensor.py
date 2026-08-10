@@ -1057,23 +1057,27 @@ document.addEventListener('fullscreenchange',()=>{
 });
 // Esc is handled by the browser when in native fullscreen; cover the CSS-only fallback case
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!document.fullscreenElement)_applyFsMode(false);});
+let _pulseTs=null;
 function applyMarkerSelection(){
-  if(_pulseIv){clearInterval(_pulseIv);_pulseIv=null;}
   detMarkers.forEach(({m,ts,r})=>{
     if(ts===selectedDetTs){
       m.setStyle({color:'#2ea043',weight:1,fillColor:'#3fb950',fillOpacity:.95});
-      _pulsePhase=0;
-      _pulseIv=setInterval(()=>{
-        _pulsePhase=(_pulsePhase+0.15)%(2*Math.PI);
-        const p=Math.abs(Math.sin(_pulsePhase));
-        m.setRadius(r+p*5);
-        m.setStyle({fillOpacity:.55+p*.4});
-      },40);
+      if(_pulseTs!==selectedDetTs){
+        if(_pulseIv){clearInterval(_pulseIv);_pulseIv=null;}
+        _pulseTs=selectedDetTs;_pulsePhase=0;
+        _pulseIv=setInterval(()=>{
+          _pulsePhase=(_pulsePhase+0.15)%(2*Math.PI);
+          const p=Math.abs(Math.sin(_pulsePhase));
+          m.setRadius(r+p*5);
+          m.setStyle({fillOpacity:.55+p*.4});
+        },40);
+      }
     } else {
       m.setRadius(r);
       m.setStyle({color:'#c0392b',fillColor:'#f85149',fillOpacity:selectedDetTs?0.2:0.85});
     }
   });
+  if(!selectedDetTs&&_pulseIv){clearInterval(_pulseIv);_pulseIv=null;_pulseTs=null;}
 }
 function applyRowSelection(){
   document.querySelectorAll('.det[data-ts]').forEach(el=>{
@@ -1160,7 +1164,9 @@ function update(){
         const mc=confColor(s.conf);
         if(staMarkers[k].options.fillColor!==mc)
           staMarkers[k].setStyle({color:mc,fillColor:mc,fillOpacity:.9});
-        staMarkers[k].setTooltipContent(`<b>${k}</b><br>${coord}<br>conf: ${s.conf.toFixed(3)}`);
+        const tip=`<b>${k}</b><br>${coord}<br>conf: ${s.conf.toFixed(3)}`;
+        if(staMarkers[k]._tooltip&&staMarkers[k]._tooltip._content!==tip)
+          staMarkers[k].setTooltipContent(tip);
       }
     });
     if(sDiv.innerHTML!==sHtml)sDiv.innerHTML=sHtml;
@@ -1269,20 +1275,28 @@ function update(){
       </div>`;
     }).join('');
     if(dDiv.innerHTML!==newHtml)dDiv.innerHTML=newHtml;
-    // epicenter markers
-    detMarkers.forEach(({m})=>map.removeLayer(m));
-    detMarkers.length=0;
-    d.detections.forEach(det=>{
-      if(!det.epicenter||det.teleseismic)return;
+    // epicenter markers — diff by ts to avoid destroying open popups/pulse
+    const epiDets=d.detections.filter(det=>det.epicenter&&!det.teleseismic);
+    const epiTsSet=new Set(epiDets.map(det=>det.ts));
+    const keptTs=new Set();
+    // remove stale markers
+    detMarkers.forEach(({m,ts})=>{if(!epiTsSet.has(ts))map.removeLayer(m);else keptTs.add(ts);});
+    const kept=detMarkers.filter(({ts})=>keptTs.has(ts));
+    // add new markers
+    let markersChanged=kept.length!==detMarkers.length;
+    epiDets.forEach(det=>{
+      if(keptTs.has(det.ts))return;
+      markersChanged=true;
       const [la,lo]=det.epicenter;
       const mb=det.mb||4;
       const r=Math.max(4,Math.min(14,(mb-2)*3+4));
       const mbLabel=det.mb?(det.mb_local?'local':det.mb_approx?'mb~'+det.mb.toFixed(1):'mb='+det.mb.toFixed(1)):'mb pending';
       const m=L.circleMarker([la,lo],{radius:r,color:'#c0392b',weight:1,fillColor:'#f85149',fillOpacity:.85})
         .bindPopup(`${fmtLocal(det.ts)}<br>${det.stations.join(', ')}<br>${mbLabel}`).addTo(map);
-      detMarkers.push({m,ts:det.ts,r});
+      kept.push({m,ts:det.ts,r});
     });
-    applyMarkerSelection();
+    detMarkers.length=0;kept.forEach(x=>detMarkers.push(x));
+    if(markersChanged)applyMarkerSelection();
     // flyTo newest non-teleseismic epicenter when it first appears
     const newestEpi=dets.find(det=>det.epicenter&&!det.teleseismic);
     if(newestEpi && newestEpi.ts!==lastFlyTs){
