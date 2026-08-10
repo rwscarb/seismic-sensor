@@ -50,6 +50,10 @@ EMSC_MIN_MAG      = float(os.environ.get('EMSC_MIN_MAG', '2.0')) # min magnitude
 SLACK_WEBHOOK_URL = os.environ.get('SLACK_WEBHOOK_URL', '')       # optional: post detection alerts to Slack
 UMAMI_SITE_ID    = os.environ.get('UMAMI_SITE_ID', '')            # optional: Umami analytics website ID
 DETECTIONS_PATH  = os.environ.get('DETECTIONS_PATH', '/tmp/detections.json')
+USGS_POLL_INTERVAL   = float(os.environ.get('USGS_POLL_INTERVAL', '600'))   # seconds between significant-event polls
+USGS_SIG_MIN_MAG     = float(os.environ.get('USGS_SIG_MIN_MAG', '5.5'))    # min mag to flag as significant global event
+TELE_MATCH_WINDOW    = float(os.environ.get('TELE_MATCH_WINDOW', '90.0'))   # ±s around expected P-arrival to claim a match
+SLACK_SIGNING_SECRET = os.environ.get('SLACK_SIGNING_SECRET', '')           # Slack app signing secret (for slash command verification)
 
 # Parse stations: "GE.APE,GE.MORC" → [('GE','APE'), ('GE','MORC')]
 def _parse_stations(raw):
@@ -1018,6 +1022,129 @@ def report_usgs_deferred(det_unix, p_arrivals):
         sensor_state.update_usgs(det_unix, None)
 
 
+# ── USGS significant-event watcher ───────────────────────────────────────────
+# Polls USGS every USGS_POLL_INTERVAL seconds.  For each significant event
+# (M ≥ USGS_SIG_MIN_MAG) not yet seen, computes expected P-wave arrival time
+# at our stations and checks whether sensor_state.detections contains a match.
+# Logs [DETECTED] or [MISSED] and optionally Slacks the result.
+
+_sig_seen: set = set()   # event IDs already processed this run
+
+def _expected_p_arrival(event_lat, event_lon, event_unix):
+    """Return the earliest expected P-wave arrival time (unix) across all stations
+    with known coordinates.  Falls back to event_unix + 600s if no coords yet."""
+    arrivals = []
+    for key, (sta_lat, sta_lon) in station_coords.items():
+        dist_km = haversine_km(event_lat, event_lon, sta_lat, sta_lon)
+        arrivals.append(event_unix + p_travel_time_s(dist_km))
+    return min(arrivals) if arrivals else event_unix + 600.0
+
+
+def _find_matching_detection(expected_arrival):
+    """Return the closest DetectionSnap within TELE_MATCH_WINDOW of expected_arrival, or None."""
+    best = None
+    best_diff = TELE_MATCH_WINDOW
+    with sensor_state._lock:
+        for det in sensor_state.detections:
+            diff = abs(det.unix_ts - expected_arrival)
+            if diff < best_diff:
+                best_diff = diff
+                best = det
+    return best
+
+
+def _slack_sig_event(event, expected_arrival, matched_det):
+    """Post a significant-event Slack alert (distinct from detection alerts)."""
+    if not SLACK_WEBHOOK_URL:
+        return
+    import urllib.request
+    mag   = event['mag']
+    place = event['place']
+    t_str = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(event['time']))
+    arr_str = time.strftime('%H:%M:%SZ', time.gmtime(expected_arrival))
+    if matched_det:
+        status = f'✅ DETECTED (±{abs(matched_det.unix_ts - expected_arrival):.0f}s, conf {matched_det.conf:.3f})'
+    else:
+        status = '❌ NOT DETECTED in log'
+    text = (
+        f'🌍 *Significant Earthquake — M{mag}*\n'
+        f'Location: `{place}`\n'
+        f'Origin: `{t_str}`\n'
+        f'Expected P at sensor: `{arr_str}`\n'
+        f'Sensor status: {status}'
+    )
+    payload = json.dumps({'text': text, 'mrkdwn': True}).encode()
+    req = urllib.request.Request(
+        SLACK_WEBHOOK_URL,
+        data=payload,
+        headers={'Content-Type': 'application/json'},
+        method='POST',
+    )
+    try:
+        urllib.request.urlopen(req, timeout=10)
+    except Exception as e:
+        print(f'  [sig-watch] slack failed: {e}', flush=True)
+
+
+def poll_usgs_significant():
+    """Background thread: poll USGS significant-event feed and cross-check detections."""
+    import urllib.request
+    # Wait a bit after startup so station_coords has time to populate
+    time.sleep(30)
+    print('[sig-watch] USGS significant-event watcher started', flush=True)
+    while True:
+        try:
+            url = (
+                f'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson'
+                f'&minmagnitude={USGS_SIG_MIN_MAG}'
+                f'&orderby=time-asc'
+                f'&starttime={time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - 86400))}'
+                f'&endtime={time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())}'
+                f'&limit=50'
+            )
+            with urllib.request.urlopen(url, timeout=20) as resp:
+                data = json.loads(resp.read())
+            for feat in data.get('features', []):
+                eid = feat.get('id', '')
+                if eid in _sig_seen:
+                    continue
+                _sig_seen.add(eid)
+                p   = feat['properties']
+                c   = feat['geometry']['coordinates']
+                mag = p.get('mag', 0)
+                if mag is None or mag < USGS_SIG_MIN_MAG:
+                    continue
+                event = {
+                    'mag':   mag,
+                    'place': p.get('place', '?'),
+                    'time':  p['time'] / 1000,
+                    'lat':   c[1],
+                    'lon':   c[0],
+                    'depth': c[2] if len(c) > 2 else 0,
+                }
+                t_str    = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(event['time']))
+                exp_arr  = _expected_p_arrival(event['lat'], event['lon'], event['time'])
+                arr_str  = time.strftime('%H:%M:%SZ', time.gmtime(exp_arr))
+                matched  = _find_matching_detection(exp_arr)
+                ns = 'N' if event['lat'] >= 0 else 'S'
+                ew = 'E' if event['lon'] >= 0 else 'W'
+                coord_str = f"{abs(event['lat']):.2f}°{ns} {abs(event['lon']):.2f}°{ew}"
+                if matched:
+                    lag = abs(matched.unix_ts - exp_arr)
+                    status = f'DETECTED (Δ={lag:.0f}s conf={matched.conf:.3f})'
+                else:
+                    status = 'NOT DETECTED'
+                print(
+                    f'  [sig-watch {t_str}] M{mag} {event["place"]} {coord_str} '
+                    f'depth={event["depth"]:.0f}km → P@{arr_str} → {status}',
+                    flush=True,
+                )
+                _slack_sig_event(event, exp_arr, matched)
+        except Exception as e:
+            print(f'  [sig-watch] poll error: {e}', flush=True)
+        time.sleep(USGS_POLL_INTERVAL)
+
+
 # ── Web UI ────────────────────────────────────────────────────────────────────
 _WEB_HTML = """<!DOCTYPE html>
 <html lang="en">
@@ -1665,6 +1792,120 @@ def start_web_server():
         lat, lon, rms = result
         return jsonify({'lat': round(lat, 4), 'lon': round(lon, 4), 'rms': round(rms, 3), 'n': len(arrivals)})
 
+    # ── Slack slash command endpoint ───────────────────────────────────────────
+    @app.route('/slack/command', methods=['POST'])
+    def slack_command():
+        import hashlib, hmac
+        # Verify Slack request signature
+        if SLACK_SIGNING_SECRET:
+            ts  = request.headers.get('X-Slack-Request-Timestamp', '')
+            sig = request.headers.get('X-Slack-Signature', '')
+            body_bytes = request.get_data()
+            base = f'v0:{ts}:{body_bytes.decode()}'.encode()
+            expected = 'v0=' + hmac.new(
+                SLACK_SIGNING_SECRET.encode(), base, hashlib.sha256
+            ).hexdigest()
+            if not hmac.compare_digest(expected, sig):
+                return Response('invalid signature', status=403, mimetype='text/plain')
+        else:
+            body_bytes = request.get_data()
+
+        text    = request.form.get('text', '').strip().lower()
+        parts   = text.split()
+        sub     = parts[0] if parts else 'status'
+        now     = time.time()
+
+        if sub in ('status', ''):
+            snap   = sensor_state.to_dict()
+            uptime = int(now - SERVER_START_TIME)
+            h, m   = divmod(uptime // 60, 60)
+            sta_lines = []
+            for key, s in sorted(snap['stations'].items()):
+                age = int(now - s['last_ts'])
+                sta_lines.append(f"`{key}` conf={s['conf']:.3f} age={age}s")
+            det_count = len(snap['detections'])
+            last_det  = snap['detections'][-1]['ts'] if snap['detections'] else 'none'
+            blocks = [
+                {'type': 'header', 'text': {'type': 'plain_text', 'text': '🌍 Seismic Sensor Status'}},
+                {'type': 'section', 'fields': [
+                    {'type': 'mrkdwn', 'text': f'*Uptime:* {h}h {m}m'},
+                    {'type': 'mrkdwn', 'text': f'*Detections:* {det_count} total'},
+                    {'type': 'mrkdwn', 'text': f'*Last detection:* {last_det}'},
+                    {'type': 'mrkdwn', 'text': f'*Threshold:* {THRESHOLD}'},
+                ]},
+                {'type': 'section', 'text': {'type': 'mrkdwn',
+                    'text': '*Stations:*\n' + '\n'.join(sta_lines) if sta_lines else '*Stations:* none active'}},
+            ]
+            return jsonify({'response_type': 'in_channel', 'blocks': blocks})
+
+        elif sub == 'recent':
+            n = 5
+            if len(parts) > 1 and parts[1].isdigit():
+                n = min(int(parts[1]), 20)
+            dets = sensor_state.to_dict()['detections'][-n:]
+            if not dets:
+                return jsonify({'response_type': 'in_channel', 'text': 'No detections on record.'})
+            lines = []
+            for d in reversed(dets):
+                mb_str  = f"mb={d['mb']:.1f}" if d.get('mb') is not None else 'mb=?'
+                epi_str = ''
+                if d.get('epicenter'):
+                    lat, lon = d['epicenter']
+                    ns = 'N' if lat >= 0 else 'S'
+                    ew = 'E' if lon >= 0 else 'W'
+                    epi_str = f" | {abs(lat):.1f}°{ns} {abs(lon):.1f}°{ew}"
+                usgs_str = ''
+                if d.get('usgs'):
+                    u = d['usgs']
+                    usgs_str = f" → M{u['mag']} {u['place']}"
+                lines.append(f"`{d['ts']}` {mb_str} conf={d['conf']:.3f}{epi_str}{usgs_str}")
+            return jsonify({'response_type': 'in_channel',
+                'text': f'*Last {len(dets)} detections:*\n' + '\n'.join(lines)})
+
+        elif sub == 'usgs':
+            # Show recent events from the sig-watcher's seen set
+            import urllib.request as ureq
+            try:
+                url = (
+                    f'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson'
+                    f'&minmagnitude={USGS_SIG_MIN_MAG}'
+                    f'&orderby=time-asc'
+                    f'&starttime={time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 86400))}'
+                    f'&endtime={time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())}'
+                    f'&limit=10'
+                )
+                with ureq.urlopen(url, timeout=15) as resp:
+                    data = json.loads(resp.read())
+                feats = data.get('features', [])[-8:]
+                if not feats:
+                    return jsonify({'response_type': 'in_channel', 'text': f'No M{USGS_SIG_MIN_MAG}+ events in past 24h.'})
+                lines = []
+                for f in reversed(feats):
+                    p  = f['properties']
+                    c  = f['geometry']['coordinates']
+                    ts = time.strftime('%H:%MZ', time.gmtime(p['time'] / 1000))
+                    exp = _expected_p_arrival(c[1], c[0], p['time'] / 1000)
+                    matched = _find_matching_detection(exp)
+                    status = '✅' if matched else '❌'
+                    lines.append(f"{status} `{ts}` M{p['mag']} {p.get('place','?')}")
+                return jsonify({'response_type': 'in_channel',
+                    'text': f'*M{USGS_SIG_MIN_MAG}+ events past 24h (✅=detected ❌=missed):*\n' + '\n'.join(lines)})
+            except Exception as e:
+                return jsonify({'response_type': 'ephemeral', 'text': f'USGS fetch failed: {e}'})
+
+        elif sub == 'help':
+            return jsonify({'response_type': 'ephemeral', 'text': (
+                '*Seismic Sensor slash commands:*\n'
+                '`/seismic status` — station health, uptime, detection count\n'
+                '`/seismic recent [N]` — last N detections (default 5, max 20)\n'
+                '`/seismic usgs` — M5.5+ events past 24h with detection status\n'
+                '`/seismic help` — this message'
+            )})
+
+        else:
+            return jsonify({'response_type': 'ephemeral',
+                'text': f'Unknown subcommand `{sub}`. Try `/seismic help`.'})
+
     t = threading.Thread(
         target=lambda: app.run(host='0.0.0.0', port=WEB_PORT, threaded=True),
         daemon=True,
@@ -1823,6 +2064,13 @@ def run_sensor(models):
     print(f"  Threshold: {THRESHOLD}  |  Consensus: {N_CONSENSUS}/{len(ALL_STATIONS)} in {CONSENSUS_WINDOW:.0f}s", flush=True)
     print(f"  Cooldown:  {ALERT_COOLDOWN}s  |  P-vel: {P_VEL_KM_S} km/s", flush=True)
     print(f"  Localize:  {LOC_MIN_STA}+ stations required", flush=True)
+
+    # USGS significant-event watcher (reverse correlation: catalog → detection log)
+    threading.Thread(
+        target=poll_usgs_significant,
+        daemon=True,
+        name='usgs-sig-watch',
+    ).start()
 
     # Build per-server station groups; always run GEOFON, optionally IRIS
     server_groups = [(SEEDLINK_SERVER, STATIONS)]
