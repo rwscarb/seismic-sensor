@@ -33,6 +33,7 @@ WEB_PORT         = int(os.environ.get('WEB_PORT', '8080'))
 TUI_MODE         = os.environ.get('TUI', '').lower() in ('1', 'true', 'yes')
 TEMP_SCALE       = float(os.environ.get('TEMP_SCALE', '1.0'))   # temperature for classifier calibration
 USGS_MIN_MAG     = float(os.environ.get('USGS_MIN_MAG', '4.0')) # min magnitude for USGS catalog lookup
+DETECTIONS_PATH  = os.environ.get('DETECTIONS_PATH', '/tmp/detections.json')
 
 # Parse stations: "GE.APE,GE.MORC" → [('GE','APE'), ('GE','MORC')]
 STATIONS = []
@@ -83,6 +84,40 @@ class DetectionSnap:
         if self.stations is None:
             self.stations = []
 
+def _save_detections(detections):
+    try:
+        tmp = DETECTIONS_PATH + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump([dataclasses.asdict(d) for d in detections], f)
+        os.replace(tmp, DETECTIONS_PATH)
+    except Exception as e:
+        print(f"[persist] save failed: {e}", flush=True)
+
+def _load_detections():
+    try:
+        with open(DETECTIONS_PATH) as f:
+            rows = json.load(f)
+        dets = []
+        for r in rows:
+            d = DetectionSnap(
+                ts=r.get('ts', ''),
+                unix_ts=r.get('unix_ts', 0.0),
+                stations=r.get('stations', []),
+                conf=r.get('conf', 0.0),
+                logit_gap=r.get('logit_gap', 0.0),
+                mb=r.get('mb'),
+                epicenter=tuple(r['epicenter']) if r.get('epicenter') else None,
+                usgs=r.get('usgs'),
+            )
+            dets.append(d)
+        print(f"[persist] loaded {len(dets)} detections from {DETECTIONS_PATH}", flush=True)
+        return dets
+    except FileNotFoundError:
+        return []
+    except Exception as e:
+        print(f"[persist] load failed: {e} — starting fresh", flush=True)
+        return []
+
 class SensorState:
     def __init__(self):
         self._lock = threading.Lock()
@@ -98,6 +133,8 @@ class SensorState:
             self.detections.append(det)
             if len(self.detections) > 100:
                 self.detections.pop(0)
+            snap = list(self.detections)
+        _save_detections(snap)
 
     def update_mb(self, ref_unix, mb):
         with self._lock:
@@ -105,6 +142,8 @@ class SensorState:
                 if abs(det.unix_ts - ref_unix) < 30:
                     det.mb = mb
                     break
+            snap = list(self.detections)
+        _save_detections(snap)
 
     def update_usgs(self, ref_unix, event):
         with self._lock:
@@ -112,6 +151,8 @@ class SensorState:
                 if abs(det.unix_ts - ref_unix) < 30:
                     det.usgs = event
                     break
+            snap = list(self.detections)
+        _save_detections(snap)
 
     def to_dict(self):
         with self._lock:
@@ -690,8 +731,8 @@ function update(){
       const magType=det.usgs?(det.usgs.magType||''):'';
       const detTitle=`${det.ts}\nstations: ${det.stations.join(', ')}\nconf: ${det.conf.toFixed(4)}  logit gap: ${(det.logit_gap||0).toFixed(1)}`
         +(det.epicenter?`\nepi: ${det.epicenter[0].toFixed(2)}N ${det.epicenter[1].toFixed(2)}E`:'')
-        +(det.mb!=null?`\nmb=${det.mb.toFixed(1)} (IASPEI body-wave)`:'\nmb pending...')
-        +(det.usgs?`\nUSGS: M${det.usgs.mag}${magType} - ${place}`:'\nUSGS lookup pending...');
+        +(det.mb!=null?`\nmb=${det.mb.toFixed(1)} (IASPEI body-wave)`:`\nmb pending...`)
+        +(det.usgs?`\nUSGS: M${det.usgs.mag}${magType} - ${place}`:`\nUSGS lookup pending...`);
       let usgsStr='';
       if(det.usgs){usgsStr=`<span style="color:#a371f7"> ·M${det.usgs.mag}${magType} ${place.split(',')[0]}</span>`}
       return `<div class="det" title="${escAttr(detTitle)}">
@@ -882,6 +923,7 @@ def seedlink_loop(models):
 
 def run_sensor(models):
     init_station_state()
+    sensor_state.detections = _load_detections()
 
     startup_delay = int(os.environ.get('STARTUP_DELAY', '8'))
     if startup_delay > 0:

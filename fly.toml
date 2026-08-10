@@ -16,6 +16,7 @@ primary_region = 'fra'
   LOC_MIN_STA      = '3'
   P_LEAD_S         = '0.4'
   CHECKPOINT_DIR   = '/checkpoints'
+  DETECTIONS_PATH  = '/tmp/detections.json'
 
 [http_service]
   internal_port        = 8080
