@@ -48,6 +48,12 @@ STRIDE        = 10
 TARGET_SRATE  = 100.0
 BUF_DECAY     = 0.876
 BUF_STRENGTH  = 1.429
+MAG_MAX_CREDIBLE = 7.5   # regression head saturates above this; suppress display
+
+def fmt_mag(mag_est):
+    if mag_est > MAG_MAX_CREDIBLE:
+        return "---"
+    return f"M{max(-2.0, mag_est):.1f}"
 
 # ── Known station coordinates (lat, lon) — fallback if FDSN fetch fails ───────
 KNOWN_COORDS = {
@@ -247,13 +253,12 @@ def on_inference(net, sta, conf, mag_est, now):
             last_alert[0] = now
             recent_detections.clear()
 
-            mag_display = max(-2.0, min(9.9, mag_est))
             station_list = ', '.join(sorted(stations_fired))
             print(f"\n{'='*60}", flush=True)
             print(f"  DETECTION  {ts}", flush=True)
             print(f"  Stations:   {station_list}  ({len(stations_fired)}/{N_CONSENSUS} consensus)", flush=True)
             print(f"  Confidence: {conf:.4f}  (threshold={THRESHOLD})", flush=True)
-            print(f"  Mag est:    M{mag_display:.1f}  (uncalibrated)", flush=True)
+            print(f"  Mag est:    {fmt_mag(mag_est)}  (uncalibrated)", flush=True)
             print(f"  Lead time:  +{P_LEAD_S}s before P-arrival", flush=True)
 
             # Attempt epicenter localization
@@ -285,14 +290,12 @@ def on_inference(net, sta, conf, mag_est, now):
             reset_arrivals()
 
         elif not consensus_met:
-            mag_display = max(-2.0, min(9.9, mag_est))
-            n_waiting   = N_CONSENSUS - len(stations_fired)
-            print(f"  [{ts}] {key} CANDIDATE conf={conf:.3f} mag=M{mag_display:.1f} "
+            n_waiting = N_CONSENSUS - len(stations_fired)
+            print(f"  [{ts}] {key} CANDIDATE conf={conf:.3f} mag={fmt_mag(mag_est)} "
                   f"(waiting for {n_waiting} more station(s))", flush=True)
     else:
         if now - station_status[key] > 10.0:
-            mag_display = max(-2.0, min(9.9, mag_est))
-            print(f"[{ts}] {key}  conf={conf:.3f}  mag=M{mag_display:.1f}", flush=True)
+            print(f"[{ts}] {key}  conf={conf:.3f}  mag={fmt_mag(mag_est)}", flush=True)
             station_status[key] = now
 
 # ── SeedLink client ────────────────────────────────────────────────────────────
