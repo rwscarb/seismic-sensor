@@ -34,8 +34,9 @@ P_LEAD_S         = float(os.environ.get('P_LEAD_S', '0.4'))      # model's pre-P
 WEB_PORT         = int(os.environ.get('WEB_PORT', '8080'))
 TUI_MODE         = os.environ.get('TUI', '').lower() in ('1', 'true', 'yes')
 TEMP_SCALE       = float(os.environ.get('TEMP_SCALE', '1.0'))   # temperature for classifier calibration
-USGS_MIN_MAG     = float(os.environ.get('USGS_MIN_MAG', '4.0')) # min magnitude for USGS catalog lookup
-EMSC_MIN_MAG     = float(os.environ.get('EMSC_MIN_MAG', '2.0')) # min magnitude for EMSC fallback lookup
+USGS_MIN_MAG      = float(os.environ.get('USGS_MIN_MAG', '4.0')) # min magnitude for USGS catalog lookup
+EMSC_MIN_MAG      = float(os.environ.get('EMSC_MIN_MAG', '2.0')) # min magnitude for EMSC fallback lookup
+SLACK_WEBHOOK_URL = os.environ.get('SLACK_WEBHOOK_URL', '')       # optional: post detection alerts to Slack
 DETECTIONS_PATH  = os.environ.get('DETECTIONS_PATH', '/tmp/detections.json')
 
 # Parse stations: "GE.APE,GE.MORC" → [('GE','APE'), ('GE','MORC')]
@@ -406,7 +407,8 @@ def estimate_mb(key, p_arrival_unix, epicenter_latlon):
     T  = float(2.0 * np.mean(np.diff(zc)) / TARGET_SRATE) if len(zc) >= 4 else 1.0
     T  = max(0.5, min(2.0, T))   # IASPEI: constrain to teleseismic P-wave band
 
-    # Q(Δ) — Richter (1958) table approximation for shallow focus
+    # Q(Δ) — Richter (1958) table approximation for shallow focus.
+    # Note: A above is in nm; GR tables assume µm → subtract log10(1000)=3 from Q constants.
     approx = False
     if epicenter_latlon is not None and key in station_coords:
         sta_lat, sta_lon = station_coords[key]
@@ -414,10 +416,10 @@ def estimate_mb(key, p_arrival_unix, epicenter_latlon):
         dist_deg = haversine_km(sta_lat, sta_lon, epi_lat, epi_lon) / 111.195
         dist_deg = max(2.0, min(100.0, dist_deg))
     else:
-        dist_deg = 45.0   # mid-range teleseismic assumption; ±0.6 mag unit uncertainty
+        dist_deg = 45.0   # mid-range teleseismic assumption; ±1 mag unit uncertainty
         approx = True
 
-    Q = (5.0 + 0.013 * dist_deg) if dist_deg < 20.0 else (5.1 + 0.015 * dist_deg)
+    Q = (2.0 + 0.013 * dist_deg) if dist_deg < 20.0 else (2.1 + 0.015 * dist_deg)
     mb = max(0.0, min(10.0, math.log10(A / T) + Q))
     print(f"  [mb dbg] {key}: A={A:.1f}nm T={T:.2f}s A/T={A/T:.1f} Q={Q:.2f}({dist_deg:.0f}deg{'~' if approx else ''}) -> mb={mb:.1f}", flush=True)
     return round(mb, 1), ('approx' if approx else None), A
@@ -567,6 +569,12 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
             )
             sensor_state.add_detection(det_rec)
 
+            threading.Thread(
+                target=send_slack_alert,
+                args=(ts, stations_fired, conf, epicenter_latlon),
+                daemon=True,
+            ).start()
+
             reset_arrivals()
 
             # Launch deferred mb + USGS lookups in background
@@ -635,6 +643,33 @@ def query_usgs_event(det_unix, p_arrivals):
         }
     except Exception:
         return None
+
+
+def send_slack_alert(ts, stations_fired, conf, epicenter=None):
+    """POST a detection alert to Slack webhook if configured."""
+    if not SLACK_WEBHOOK_URL:
+        return
+    import urllib.request
+    sta_list = ' · '.join(sorted(stations_fired))
+    epi_str  = f'\nEpicenter: `{epicenter[0]:.2f}N {epicenter[1]:.2f}E`' if epicenter else ''
+    text = (
+        f'🌍 *Seismic Detection*\n'
+        f'Time: `{ts}`\n'
+        f'Stations: `{sta_list}`\n'
+        f'Confidence: `{conf:.3f}`{epi_str}\n'
+        f'<https://seismic-sensor.fly.dev|View dashboard>'
+    )
+    payload = json.dumps({'text': text, 'mrkdwn': True}).encode()
+    req = urllib.request.Request(
+        SLACK_WEBHOOK_URL,
+        data=payload,
+        headers={'Content-Type': 'application/json'},
+        method='POST',
+    )
+    try:
+        urllib.request.urlopen(req, timeout=10)
+    except Exception as e:
+        print(f"  [slack] webhook failed: {e}", flush=True)
 
 
 def query_emsc_event(det_unix, p_arrivals):
@@ -785,6 +820,7 @@ body.fs-mode #fs-overlay{display:block}
   <span id="cfg" title="SeedLink: %(seedlink)s">%(cfg_text)s</span>
   <span id="last-event-summary"></span>
   <span id="last-update">connecting...</span>
+  <button id="mute-btn" title="Toggle audio alerts" style="background:#161b22;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;margin-left:4px">&#128266; on</button>
 </header>
 <div class="grid">
   <div class="panel" id="left-panel">
@@ -830,6 +866,50 @@ document.getElementById('fs-btn').addEventListener('click',()=>{
   setTimeout(()=>map.invalidateSize(),100);
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape')document.body.classList.remove('fs-mode');});
+function flyToEpi(lat,lon){map.flyTo([lat,lon],6,{duration:1.2});}
+// audio alert
+let audioEnabled=true;
+let lastDetTs=null;
+let audioCtx=null;
+const muteBtn=document.getElementById('mute-btn');
+muteBtn.addEventListener('click',()=>{
+  audioEnabled=!audioEnabled;
+  muteBtn.textContent=audioEnabled?'🔔 on':'🔕 off';
+  muteBtn.style.color=audioEnabled?'#8b949e':'#6e7681';
+  if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+});
+function playDetectionAlert(){
+  if(!audioEnabled)return;
+  try{
+    if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    if(audioCtx.state==='suspended')audioCtx.resume();
+    [[880,0],[660,0.18],[440,0.32]].forEach(([freq,t])=>{
+      const osc=audioCtx.createOscillator();
+      const gain=audioCtx.createGain();
+      osc.connect(gain);gain.connect(audioCtx.destination);
+      osc.frequency.value=freq;osc.type='sine';
+      gain.gain.setValueAtTime(0.25,audioCtx.currentTime+t);
+      gain.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+t+0.16);
+      osc.start(audioCtx.currentTime+t);
+      osc.stop(audioCtx.currentTime+t+0.18);
+    });
+  }catch(e){}
+}
+// browser desktop notification
+if('Notification' in window && Notification.permission==='default'){
+  Notification.requestPermission();
+}
+function showDesktopNotification(det){
+  if(!audioEnabled)return;
+  if(!('Notification' in window)||Notification.permission!=='granted')return;
+  const mbStr=det.mb!=null?(det.mb_local?'local':det.mb_approx?`mb~${det.mb.toFixed(1)}`:`mb=${det.mb.toFixed(1)}`):'mb computing';
+  new Notification('🌍 Seismic Detection',{
+    body:`${det.stations.join(' · ')} | ${mbStr}`,
+    tag:'seismic-det',
+    renotify:true,
+    silent:true,
+  });
+}
 function update(){
   fetch('/api/state').then(r=>r.json()).then(d=>{
     document.getElementById('last-update').textContent='updated '+new Date().toLocaleTimeString();
@@ -865,6 +945,15 @@ function update(){
     const dets=[...d.detections].reverse();
     const cntEl=document.getElementById('det-count');
     if(cntEl)cntEl.textContent=d.detections.length?`${d.detections.length} total`:'';
+    // alert on new detection
+    if(dets.length){
+      const newest=dets[0];
+      if(lastDetTs!==null && newest.ts!==lastDetTs){
+        playDetectionAlert();
+        showDesktopNotification(newest);
+      }
+      lastDetTs=newest.ts;
+    }
     // last-event summary in header
     const sumEl=document.getElementById('last-event-summary');
     if(sumEl&&dets.length){
@@ -899,12 +988,12 @@ function update(){
       } else {
         mbChip=`<span class="chip" style="color:#6e7681;background:#161b22">mb…</span>`;
       }
-      // epicenter chip
+      // epicenter chip — clickable to fly map to location
       let epiChip='';
       if(det.epicenter){
         const [la,lo]=det.epicenter;
         const ns=la>=0?'N':'S', ew=lo>=0?'E':'W';
-        epiChip=`<span class="chip chip-epi">${Math.abs(la).toFixed(1)}°${ns} ${Math.abs(lo).toFixed(1)}°${ew}</span>`;
+        epiChip=`<button class="chip chip-epi" onclick="flyToEpi(${la},${lo})" title="Fly map to epicenter" style="cursor:pointer;border:none;font-family:inherit">&#x1F4CD; ${Math.abs(la).toFixed(1)}°${ns} ${Math.abs(lo).toFixed(1)}°${ew}</button>`;
       }
       // catalog icon — right-aligned checkmark/cross
       let usgsIcon='';
