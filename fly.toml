@@ -1,0 +1,18 @@
+app = 'seismic-sensor'
+primary_region = 'sjc'
+
+[build]
+
+[env]
+  ALERT_COOLDOWN = '5.0'
+  CHANNELS = 'HHZ,HHN,HHE'
+  CHECKPOINT_DIR = '/checkpoints'
+  NETWORK = 'IU'
+  N_SEEDS = '3'
+  SEEDLINK_SERVER = 'liss.usgs.gov:4000'
+  STATION = 'MAJO'
+  THRESHOLD = '0.835'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '1gb'
