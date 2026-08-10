@@ -49,10 +49,10 @@ USGS_MIN_MAG      = float(os.environ.get('USGS_MIN_MAG', '4.0')) # min magnitude
 EMSC_MIN_MAG      = float(os.environ.get('EMSC_MIN_MAG', '2.0')) # min magnitude for EMSC fallback lookup
 SLACK_WEBHOOK_URL = os.environ.get('SLACK_WEBHOOK_URL', '')       # optional: post detection alerts to Slack
 UMAMI_SITE_ID    = os.environ.get('UMAMI_SITE_ID', '')            # optional: Umami analytics website ID
-DETECTIONS_PATH  = os.environ.get('DETECTIONS_PATH', '/tmp/detections.json')
+DETECTIONS_PATH  = os.environ.get('DETECTIONS_PATH', '/data/detections.json')
 USGS_POLL_INTERVAL   = float(os.environ.get('USGS_POLL_INTERVAL', '600'))   # seconds between significant-event polls
 USGS_SIG_MIN_MAG     = float(os.environ.get('USGS_SIG_MIN_MAG', '5.5'))    # min mag to flag as significant global event
-TELE_MATCH_WINDOW    = float(os.environ.get('TELE_MATCH_WINDOW', '90.0'))   # ±s around expected P-arrival to claim a match
+TELE_MATCH_WINDOW    = float(os.environ.get('TELE_MATCH_WINDOW', '300.0'))  # ±s around expected P-arrival to claim a match (5 min covers model error at teleseismic distances)
 SLACK_SIGNING_SECRET = os.environ.get('SLACK_SIGNING_SECRET', '')           # Slack app signing secret (for slash command verification)
 
 # Parse stations: "GE.APE,GE.MORC" → [('GE','APE'), ('GE','MORC')]
@@ -726,6 +726,7 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
 
         if consensus_met and now - last_alert[0] > ALERT_COOLDOWN:
             last_alert[0] = now
+            mag_consensus = float(np.mean([r[3] for r in recent_detections if r[1] in stations_fired])) if recent_detections else mag_est
             recent_detections.clear()
 
             # Snapshot arrivals before reset (needed for deferred mb thread)
@@ -791,7 +792,7 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
 
             threading.Thread(
                 target=send_slack_alert,
-                args=(ts, stations_fired, conf, epicenter_latlon),
+                args=(ts, stations_fired, conf, epicenter_latlon, mag_consensus),
                 daemon=True,
             ).start()
 
@@ -893,18 +894,19 @@ def query_usgs_event(det_unix, p_arrivals):
         return None
 
 
-def send_slack_alert(ts, stations_fired, conf, epicenter=None):
+def send_slack_alert(ts, stations_fired, conf, epicenter=None, mag_est=None):
     """POST a detection alert to Slack webhook if configured."""
     if not SLACK_WEBHOOK_URL:
         return
     import urllib.request
     sta_list = ' · '.join(sorted(stations_fired))
     epi_str  = f'\nEpicenter: `{epicenter[0]:.2f}N {epicenter[1]:.2f}E`' if epicenter else ''
+    mag_str  = f'\nMagnitude: `{fmt_mag(mag_est)}` _(sensor est.)_' if mag_est is not None else ''
     text = (
         f'🌍 *Seismic Detection*\n'
         f'Time: `{ts}`\n'
         f'Stations: `{sta_list}`\n'
-        f'Confidence: `{conf:.3f}`{epi_str}\n'
+        f'Confidence: `{conf:.3f}`{mag_str}{epi_str}\n'
         f'<https://seismic-sensor.fly.dev|View dashboard>'
     )
     payload = json.dumps({'text': text, 'mrkdwn': True}).encode()
