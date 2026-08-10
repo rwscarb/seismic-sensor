@@ -3,16 +3,9 @@ services:
     build: .
     image: seismic-sensor:latest
     restart: unless-stopped
+    env_file: .env
     volumes:
-      - ./checkpoints:/checkpoints:ro   # mount trained model checkpoints (read-only)
-    environment:
-      SEEDLINK_SERVER: liss.usgs.gov:4000
-      NETWORK: IU
-      STATION: MAJO           # Matsushiro, Japan — seismically active
-      CHANNELS: HHZ,HHN,HHE
-      THRESHOLD: "0.835"      # 95.4% prec / 94.5% rec at H-0.4s
-      N_SEEDS: "3"
-      ALERT_COOLDOWN: "5.0"
+      - ./checkpoints:/checkpoints:ro
     logging:
       driver: "json-file"
       options:
