@@ -864,6 +864,7 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 .det:last-child{border-bottom:none}
 .det-selected{background:#0d2a15!important;box-shadow:inset 2px 0 0 #3fb950}
 .det:hover:not(.det-selected){background:#1c2128}
+.det-muted{opacity:0.55}
 .det-row1{display:flex;justify-content:space-between;align-items:baseline;gap:4px}
 .det-row2{display:flex;align-items:center;gap:4px;margin-top:3px;min-width:0}
 .det-time{color:#8b949e;font-size:10px;white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -1267,9 +1268,11 @@ function update(){
         +`\n${mbNote}`
         +(det.usgs?(()=>{const src=(det.usgs.source||'usgs').toUpperCase();return `\n${src}: M${det.usgs.mag}${magType} — ${place}`;})():det.usgs_checked?`\nNo catalog match (USGS M%(usgs_min_mag)s+ / EMSC M%(emsc_min_mag)s+)`:`\nCatalog lookup pending`);
       const selCls=det.ts===selectedDetTs?' det-selected':'';
-      const rowClick=(!det.teleseismic&&det.epicenter)
+      const canClick=!det.teleseismic&&det.epicenter;
+      const mutedCls=canClick?'':' det-muted';
+      const rowClick=canClick
         ?`onclick="flyToEpi(${det.epicenter[0]},${det.epicenter[1]},'${det.ts}')" style="cursor:pointer"`:'';
-      return sep+`<div class="det${selCls}" data-ts="${det.ts}" ${rowClick} title="${escAttr(detTitle)}">
+      return sep+`<div class="det${selCls}${mutedCls}" data-ts="${det.ts}" ${rowClick} title="${escAttr(detTitle)}">
         <div class="det-row1"><span class="det-time">${tPart}</span><span class="det-age">${fmtAge(det.unix_ts)}</span></div>
         <div class="det-row2"><span class="det-stas">${det.stations.join(' · ')}</span><span class="det-chips-inline">${mbChip}${epiChip}${usgsIcon}</span></div>
       </div>`;
