@@ -800,7 +800,7 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 #last-update{color:#6e7681;font-size:11px;margin-left:auto}
 #last-event-summary{font-size:11px;color:#8b949e;border-left:1px solid #30363d;padding-left:12px}
-.grid{display:grid;grid-template-columns:320px 1fr;gap:12px;padding:12px}
+.grid{display:grid;grid-template-columns:220px 1fr 320px;gap:12px;padding:12px;height:calc(100vh - 50px)}
 .panel{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:12px;min-width:0}
 .panel-hdr{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
 .panel-hdr h2{font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:1px}
@@ -833,20 +833,20 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 .chip-epi{color:#d29922;background:#2a1f00}
 .chip-usgs{color:#a371f7;background:#1e1129}
 .chip-emsc{color:#39c5cf;background:#0d1f21}
-#map{height:320px;border-radius:4px;margin-top:10px}
-.right-col{display:flex;flex-direction:column;gap:12px}
+#left-panel{overflow-y:auto;min-height:0}
+#map{height:100%;border-radius:4px;background:#000}
+#map-wrap{position:relative;border-radius:4px;overflow:hidden;min-height:0}
+.right-col{display:flex;flex-direction:column;min-height:0}
 .no-data{color:#6e7681;font-style:italic;font-size:11px}
 /* fullscreen map */
-#map-wrap{position:relative}
 #fs-btn{position:absolute;top:6px;right:6px;z-index:1000;background:#161b22cc;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:3px 7px;font-size:11px;cursor:pointer;backdrop-filter:blur(4px)}
 #fs-btn:hover{color:#e6edf3;border-color:#58a6ff}
-body.fs-mode .grid{display:flex}
+body.fs-mode .grid{display:block}
 body.fs-mode .right-col{position:fixed!important;top:50px;right:10px;bottom:10px;width:330px;z-index:1001;background:#161b22bb;backdrop-filter:blur(10px);border:1px solid #30363d;border-radius:8px;overflow:hidden;display:flex!important;flex-direction:column}
 body.fs-mode .right-col .panel{border:none;border-radius:0;background:transparent;flex:1;overflow-y:auto;overflow-x:hidden}
 body.fs-mode .right-col .panel-hdr{background:transparent;border-bottom:1px solid #30363d}
-body.fs-mode #left-panel{position:fixed;inset:0;z-index:500;border-radius:0;padding:0;display:flex;flex-direction:column;border:none}
-body.fs-mode #left-panel>.panel-hdr,body.fs-mode #stations{display:none}
-body.fs-mode #map-wrap{flex:1;margin:0}
+body.fs-mode #left-panel{display:none}
+body.fs-mode #map-wrap{position:fixed;inset:0;z-index:500;border-radius:0;margin:0;top:50px}
 body.fs-mode #map{height:100%!important;border-radius:0}
 body.fs-mode header{z-index:502;position:relative}
 /* fullscreen overlay */
@@ -868,6 +868,7 @@ body.fs-mode #fs-overlay{display:block}
   <span id="last-update">connecting...</span>
   <button id="faults-btn" title="Toggle active fault overlay (GEM Global Active Faults)" style="background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;margin-left:4px">&#9889; faults</button>
   <button id="mute-btn" title="Toggle audio alerts" style="background:#161b22;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;margin-left:4px">&#128266; on</button>
+  <button id="exit-fs-btn" title="Exit fullscreen" onclick="document.body.classList.remove('fs-mode');document.getElementById('exit-fs-btn').style.display='none'" style="display:none;background:#161b22;border:1px solid #f85149;color:#f85149;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;margin-left:4px">&#x2715; exit fullscreen</button>
   <select id="tz-sel" title="Display timezone" style="background:#161b22;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:2px 5px;font-size:11px;cursor:pointer;margin-left:6px">
     <option value="auto">Auto TZ</option>
     <option value="UTC">UTC</option>
@@ -890,14 +891,14 @@ body.fs-mode #fs-overlay{display:block}
   <div class="panel" id="left-panel">
     <div class="panel-hdr"><h2>Stations</h2></div>
     <div id="stations"></div>
-    <div id="map-wrap">
-      <button id="fs-btn" title="Toggle fullscreen map">&#x26F6;</button>
-      <div id="map"></div>
-      <div id="fs-overlay">
-        <h3>Stations</h3>
-        <div id="fso-stations"></div>
-        <div id="fso-det" class="fso-det"></div>
-      </div>
+  </div>
+  <div id="map-wrap">
+    <button id="fs-btn" title="Toggle fullscreen map">&#x26F6;</button>
+    <div id="map"></div>
+    <div id="fs-overlay">
+      <h3>Stations</h3>
+      <div id="fso-stations"></div>
+      <div id="fso-det" class="fso-det"></div>
     </div>
   </div>
   <div class="right-col">
@@ -984,11 +985,15 @@ function fmtLocal(isoStr){
   sel.addEventListener('change',()=>{_userTz=sel.value;localStorage.setItem('tz',_userTz);});
 })();
 // fullscreen toggle
-document.getElementById('fs-btn').addEventListener('click',()=>{
-  document.body.classList.toggle('fs-mode');
+const _exitFsBtn=document.getElementById('exit-fs-btn');
+function _setFsMode(on){
+  document.body.classList.toggle('fs-mode',on);
+  _exitFsBtn.style.display=on?'inline-block':'none';
   setTimeout(()=>map.invalidateSize(),100);
-});
-document.addEventListener('keydown',e=>{if(e.key==='Escape')document.body.classList.remove('fs-mode');});
+}
+document.getElementById('fs-btn').addEventListener('click',()=>_setFsMode(!document.body.classList.contains('fs-mode')));
+_exitFsBtn.addEventListener('click',()=>_setFsMode(false));
+document.addEventListener('keydown',e=>{if(e.key==='Escape')_setFsMode(false);});
 function applyMarkerSelection(){
   if(_pulseIv){clearInterval(_pulseIv);_pulseIv=null;}
   detMarkers.forEach(({m,ts,r})=>{
