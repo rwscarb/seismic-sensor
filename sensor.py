@@ -801,7 +801,7 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 #last-update{color:#6e7681;font-size:11px;margin-left:auto}
 #last-event-summary{font-size:11px;color:#8b949e;border-left:1px solid #30363d;padding-left:12px}
 .grid{display:grid;grid-template-columns:320px 1fr;gap:12px;padding:12px}
-.panel{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:12px}
+.panel{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:12px;min-width:0}
 .panel-hdr{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
 .panel-hdr h2{font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:1px}
 .det-count{font-size:10px;color:#6e7681;background:#21262d;border-radius:8px;padding:1px 6px}
@@ -812,11 +812,11 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 .sta-conf{font-size:11px}
 .conf-bar{height:4px;border-radius:2px;background:#21262d;margin-top:2px}
 .conf-fill{height:100%;border-radius:2px;transition:width .5s}
-.det{display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid #21262d;font-size:11px;min-height:26px}
+.det{display:flex;align-items:center;gap:4px;padding:5px 0;border-bottom:1px solid #21262d;font-size:11px;min-height:26px;min-width:0;overflow:hidden}
 .det:last-child{border-bottom:none}
 .det-time{color:#8b949e;font-size:10px;white-space:nowrap;flex-shrink:0;font-variant-numeric:tabular-nums}
-.det-stas{color:#58a6ff;white-space:nowrap;flex-shrink:0}
-.det-chips-inline{display:flex;gap:4px;flex:1;min-width:0}
+.det-stas{color:#58a6ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+.det-chips-inline{display:flex;gap:3px;flex-shrink:0}
 .det-usgs-icon{flex-shrink:0;font-size:13px;line-height:1;cursor:default}.det-usgs-icon[href]{cursor:pointer}
 .det-age{color:#6e7681;font-size:10px;white-space:nowrap;flex-shrink:0;text-align:right;min-width:28px}
 .det-deploy-sep{display:flex;align-items:center;gap:6px;padding:5px 0;color:#d29922;font-size:10px;letter-spacing:.5px}
@@ -837,8 +837,8 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 #fs-btn{position:absolute;top:6px;right:6px;z-index:1000;background:#161b22cc;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:3px 7px;font-size:11px;cursor:pointer;backdrop-filter:blur(4px)}
 #fs-btn:hover{color:#e6edf3;border-color:#58a6ff}
 body.fs-mode .grid{display:flex}
-body.fs-mode .right-col{position:fixed!important;top:50px;right:10px;bottom:10px;width:330px;z-index:1001;background:#161b22ee;backdrop-filter:blur(8px);border:1px solid #30363d;border-radius:8px;overflow:hidden;display:flex!important;flex-direction:column}
-body.fs-mode .right-col>.panel{border:none;border-radius:0;background:transparent;flex:1;overflow:auto}
+body.fs-mode .right-col{position:fixed!important;top:50px;right:10px;bottom:10px;width:330px;z-index:1001;background:#161b22bb;backdrop-filter:blur(10px);border:1px solid #30363d;border-radius:8px;overflow:hidden;display:flex!important;flex-direction:column}
+body.fs-mode .right-col>.panel{border:none;border-radius:0;background:transparent;flex:1;overflow-y:auto;overflow-x:hidden}
 body.fs-mode #left-panel{position:fixed;inset:0;z-index:500;border-radius:0;padding:0;display:flex;flex-direction:column;border:none}
 body.fs-mode #left-panel>.panel-hdr,body.fs-mode #stations{display:none}
 body.fs-mode #map-wrap{flex:1;margin:0}
@@ -994,7 +994,7 @@ function update(){
       const pct=Math.round(s.conf*100);
       const col=confColor(s.conf);
       const coord=sCoords[k]?`${sCoords[k][0].toFixed(2)}°N ${sCoords[k][1].toFixed(2)}°E`:'coords unknown';
-      const cardTitle=`${k}\n${coord}\nconf: ${s.conf.toFixed(4)}\nlast sample: ${new Date(s.last_ts*1000).toUTCString()}`;
+      const cardTitle=`${k}\n${coord}\nconf: ${s.conf.toFixed(4)}\nlast sample: ${fmtLocal(new Date(s.last_ts*1000).toISOString())}`;
       const barTitle=`threshold: %(threshold)s | current: ${s.conf.toFixed(3)}`;
       sDiv.innerHTML+=`<div class="station" title="${cardTitle}">
         <div class="sta-row"><span class="sta-name">${k}</span>
@@ -1044,7 +1044,7 @@ function update(){
       let sep='';
       if(!sepInserted && det.unix_ts < serverStart){
         sepInserted=true;
-        sep=`<div class="det-deploy-sep" title="Process restarted / new version deployed at ${new Date(serverStart*1000).toUTCString()}">deployed ${deployLabel}</div>`;
+        sep=`<div class="det-deploy-sep" title="Process restarted / new version deployed at ${fmtLocal(new Date(serverStart*1000).toISOString())}">deployed ${deployLabel}</div>`;
       }
       // time — local time in card, full UTC in tooltip
       const tPart=fmtLocal(det.ts);
@@ -1123,7 +1123,7 @@ function update(){
       const r=Math.max(4,Math.min(14,(mb-2)*3+4));
       const mbLabel=det.mb?(det.mb_local?'local':det.mb_approx?'mb~'+det.mb.toFixed(1):'mb='+det.mb.toFixed(1)):'mb pending';
       const m=L.circleMarker([la,lo],{radius:r,color:'#f85149',fillColor:'#f85149',fillOpacity:.6})
-        .bindPopup(`${det.ts}<br>${det.stations.join(', ')}<br>${mbLabel}`).addTo(map);
+        .bindPopup(`${fmtLocal(det.ts)}<br>${det.stations.join(', ')}<br>${mbLabel}`).addTo(map);
       detMarkers.push(m);
     });
     // flyTo newest non-teleseismic epicenter when it first appears
@@ -1219,6 +1219,10 @@ def start_web_server():
     @app.route('/')
     def index():
         return html
+
+    @app.route('/health')
+    def health():
+        return Response('ok', status=200, mimetype='text/plain')
 
     @app.route('/api/state')
     def state():

@@ -22,12 +22,23 @@ primary_region = 'fra'
   IRIS_SERVER      = 'rtserve.iris.washington.edu:18000'
   IRIS_STATIONS    = 'IU.COR,CN.PGC,IU.KDAK,IU.COLA'
 
+[deploy]
+  strategy   = "rolling"
+  wait_timeout = "120s"
+
 [http_service]
   internal_port        = 8080
   force_https          = true
   auto_stop_machines   = "off"
   auto_start_machines  = false
   min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "15s"
+    interval     = "5s"
+    method       = "GET"
+    path         = "/health"
+    timeout      = "5s"
 
 [[mounts]]
   source      = "seismic_data"
