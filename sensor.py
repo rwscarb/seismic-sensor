@@ -792,7 +792,12 @@ _WEB_HTML = """<!DOCTYPE html>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#0d1117;color:#c9d1d9;font-family:'Courier New',monospace;font-size:13px}
-header{background:#161b22;border-bottom:1px solid #30363d;padding:10px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+*{scrollbar-width:thin;scrollbar-color:#30363d transparent}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#30363d;border-radius:2px}
+::-webkit-scrollbar-thumb:hover{background:#484f58}
+header{background:#161b22;border-bottom:1px solid #30363d;padding:10px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 #cfg{color:#6e7681;font-size:11px}
 [title]{cursor:help}
@@ -812,16 +817,17 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 .sta-conf{font-size:11px}
 .conf-bar{height:4px;border-radius:2px;background:#21262d;margin-top:2px}
 .conf-fill{height:100%;border-radius:2px;transition:width .5s}
-.det{display:flex;flex-direction:column;padding:5px 4px 5px 4px;border-bottom:1px solid #21262d;font-size:11px;min-width:0;overflow:hidden}
+.det{display:flex;flex-direction:column;padding:7px 12px;border-bottom:1px solid #21262d;font-size:11px;min-width:0}
 .det:last-child{border-bottom:none}
 .det-selected{background:#0d2a15!important;box-shadow:inset 2px 0 0 #3fb950}
-.det-row1{display:flex;justify-content:space-between;align-items:center;gap:4px}
-.det-row2{display:flex;align-items:center;gap:3px;margin-top:2px;min-width:0}
+.det:hover:not(.det-selected){background:#1c2128}
+.det-row1{display:flex;justify-content:space-between;align-items:baseline;gap:4px}
+.det-row2{display:flex;align-items:center;gap:4px;margin-top:3px;min-width:0}
 .det-time{color:#8b949e;font-size:10px;white-space:nowrap;font-variant-numeric:tabular-nums}
 .det-stas{color:#58a6ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;font-size:10px}
-.det-chips-inline{display:flex;gap:3px;flex-shrink:0;align-items:center}
+.det-chips-inline{display:flex;gap:3px;flex-shrink:0;align-items:center;margin-left:auto}
 .det-usgs-icon{flex-shrink:0;font-size:12px;line-height:1;cursor:default}.det-usgs-icon[href]{cursor:pointer}
-.det-age{color:#6e7681;font-size:10px;white-space:nowrap}
+.det-age{color:#6e7681;font-size:10px;white-space:nowrap;letter-spacing:.2px}
 .det-deploy-sep{display:flex;align-items:center;gap:6px;padding:5px 0;color:#d29922;font-size:10px;letter-spacing:.5px}
 .det-deploy-sep::before,.det-deploy-sep::after{content:'';flex:1;border-top:1px solid #2a1f00}
 .chip{font-size:10px;border-radius:3px;padding:1px 5px;font-weight:bold;white-space:nowrap}
@@ -836,15 +842,15 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 #left-panel{overflow-y:auto;min-height:0}
 #map{height:100%;border-radius:4px;background:#000}
 #map-wrap{position:relative;border-radius:4px;overflow:hidden;min-height:0}
-.right-col{display:flex;flex-direction:column;min-height:0}
+.right-col{display:flex;flex-direction:column;min-height:0;background:#161b22;border:1px solid #30363d;border-radius:6px;overflow:hidden}
 .no-data{color:#6e7681;font-style:italic;font-size:11px}
 /* fullscreen map */
 #fs-btn{position:absolute;top:6px;right:6px;z-index:1000;background:#161b22cc;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:3px 7px;font-size:11px;cursor:pointer;backdrop-filter:blur(4px)}
 #fs-btn:hover{color:#e6edf3;border-color:#58a6ff}
 body.fs-mode .grid{display:block}
 body.fs-mode .right-col{position:fixed!important;top:50px;right:10px;bottom:10px;width:330px;z-index:1001;background:#161b22bb;backdrop-filter:blur(10px);border:1px solid #30363d;border-radius:8px;overflow:hidden;display:flex!important;flex-direction:column}
-body.fs-mode .right-col .panel{border:none;border-radius:0;background:transparent;flex:1;overflow-y:auto;overflow-x:hidden}
-body.fs-mode .right-col .panel-hdr{background:transparent;border-bottom:1px solid #30363d}
+body.fs-mode .right-col .panel-hdr{background:transparent}
+body.fs-mode .right-col{border:none;border-radius:8px}
 body.fs-mode #left-panel{display:none}
 body.fs-mode #map-wrap{position:fixed;inset:0;z-index:500;border-radius:0;margin:0;top:50px}
 body.fs-mode #map{height:100%!important;border-radius:0}
@@ -868,7 +874,6 @@ body.fs-mode #fs-overlay{display:block}
   <span id="last-update">connecting...</span>
   <button id="faults-btn" title="Toggle active fault overlay (GEM Global Active Faults)" style="background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;margin-left:4px">&#9889; faults</button>
   <button id="mute-btn" title="Toggle audio alerts" style="background:#161b22;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;margin-left:4px">&#128266; on</button>
-  <button id="exit-fs-btn" title="Exit fullscreen" onclick="document.body.classList.remove('fs-mode');document.getElementById('exit-fs-btn').style.display='none'" style="display:none;background:#161b22;border:1px solid #f85149;color:#f85149;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;margin-left:4px">&#x2715; exit fullscreen</button>
   <select id="tz-sel" title="Display timezone" style="background:#161b22;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:2px 5px;font-size:11px;cursor:pointer;margin-left:6px">
     <option value="auto">Auto TZ</option>
     <option value="UTC">UTC</option>
@@ -902,8 +907,8 @@ body.fs-mode #fs-overlay{display:block}
     </div>
   </div>
   <div class="right-col">
-      <div class="panel-hdr"><h2>Detections</h2><span id="det-count" class="det-count"></span><button id="filter-btn" title="Show confirmed catalog matches only" style="margin-left:auto;background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">✓ confirmed</button></div>
-    <div class="panel" style="flex:1;overflow-y:auto;border:none;border-radius:0">
+    <div class="panel-hdr" style="padding:10px 12px;border-bottom:1px solid #21262d;margin-bottom:0"><h2>Detections</h2><span id="det-count" class="det-count"></span><button id="filter-btn" title="Show confirmed catalog matches only" style="margin-left:auto;background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">✓ confirmed</button></div>
+    <div style="flex:1;overflow-y:auto;min-height:0">
       <div id="detections"></div>
     </div>
     <div id="det-more" style="display:none;padding:6px 8px;border-top:1px solid #21262d"><button onclick="showMoreDets()" style="width:100%;background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:4px 10px;font-size:10px;cursor:pointer">↓ show older</button></div>
@@ -985,14 +990,14 @@ function fmtLocal(isoStr){
   sel.addEventListener('change',()=>{_userTz=sel.value;localStorage.setItem('tz',_userTz);});
 })();
 // fullscreen toggle
-const _exitFsBtn=document.getElementById('exit-fs-btn');
+const _fsBtn=document.getElementById('fs-btn');
 function _setFsMode(on){
   document.body.classList.toggle('fs-mode',on);
-  _exitFsBtn.style.display=on?'inline-block':'none';
+  _fsBtn.textContent=on?'✕':'⛶';
+  _fsBtn.title=on?'Exit fullscreen':'Toggle fullscreen map';
   setTimeout(()=>map.invalidateSize(),100);
 }
-document.getElementById('fs-btn').addEventListener('click',()=>_setFsMode(!document.body.classList.contains('fs-mode')));
-_exitFsBtn.addEventListener('click',()=>_setFsMode(false));
+_fsBtn.addEventListener('click',()=>_setFsMode(!document.body.classList.contains('fs-mode')));
 document.addEventListener('keydown',e=>{if(e.key==='Escape')_setFsMode(false);});
 function applyMarkerSelection(){
   if(_pulseIv){clearInterval(_pulseIv);_pulseIv=null;}
