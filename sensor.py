@@ -814,7 +814,7 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 .conf-fill{height:100%;border-radius:2px;transition:width .5s}
 .det{display:flex;align-items:center;gap:4px;padding:5px 0;border-bottom:1px solid #21262d;font-size:11px;min-height:26px;min-width:0;overflow:hidden}
 .det:last-child{border-bottom:none}
-.det-selected{background:#0d2a15!important;border-left:2px solid #3fb950;padding-left:5px}
+.det-selected{background:#0d2a15!important;box-shadow:inset 2px 0 0 #3fb950}
 .det-time{color:#8b949e;font-size:10px;white-space:nowrap;flex-shrink:0;font-variant-numeric:tabular-nums}
 .det-stas{color:#58a6ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
 .det-chips-inline{display:flex;gap:3px;flex-shrink:0}
@@ -897,8 +897,9 @@ body.fs-mode #fs-overlay{display:block}
   </div>
   <div class="right-col">
     <div class="panel" style="flex:1;overflow:auto">
-      <div class="panel-hdr"><h2>Detections</h2><span id="det-count" class="det-count"></span></div>
+      <div class="panel-hdr"><h2>Detections</h2><span id="det-count" class="det-count"></span><button id="filter-btn" title="Show confirmed catalog matches only" style="margin-left:auto;background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">✓ confirmed</button></div>
       <div id="detections"></div>
+      <div id="det-more" style="display:none;padding:6px 0;text-align:center"><button onclick="showMoreDets()" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:3px 10px;font-size:10px;cursor:pointer">show older</button></div>
     </div>
   </div>
 </div>
@@ -907,7 +908,19 @@ const map = L.map('map', {zoomControl:false}).setView([45,10],2);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
   {attribution:'&copy; OSM &copy; CARTO',subdomains:'abcd',maxZoom:19}).addTo(map);
 const staMarkers={}, detMarkers=[];
-let lastFlyTs=null, selectedDetTs=null;
+let lastFlyTs=null, selectedDetTs=null, _pulseIv=null, _pulsePhase=0;
+let filterConfirmed=false, detDisplayLimit=100;
+function showMoreDets(){detDisplayLimit+=50;}
+(()=>{
+  const btn=document.getElementById('filter-btn');
+  if(!btn)return;
+  btn.addEventListener('click',()=>{
+    filterConfirmed=!filterConfirmed;
+    detDisplayLimit=100;
+    btn.style.color=filterConfirmed?'#3fb950':'#6e7681';
+    btn.style.borderColor=filterConfirmed?'#3fb950':'#30363d';
+  });
+})();
 function confColor(c){return c>=0.835?'#3fb950':c>=0.5?'#d29922':'#6e7681'}
 function fmtAge(ts){const s=Math.round(Date.now()/1000-ts);return s<60?s+'s':s<3600?Math.round(s/60)+'m':Math.round(s/3600)+'h'}
 const _browserTz=Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -940,7 +953,31 @@ document.getElementById('fs-btn').addEventListener('click',()=>{
   setTimeout(()=>map.invalidateSize(),100);
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape')document.body.classList.remove('fs-mode');});
-function flyToEpi(lat,lon,ts){map.flyTo([lat,lon],6,{duration:1.2});selectedDetTs=ts||null;}
+function applyMarkerSelection(){
+  if(_pulseIv){clearInterval(_pulseIv);_pulseIv=null;}
+  detMarkers.forEach(({m,ts,r})=>{
+    if(ts===selectedDetTs){
+      m.setStyle({color:'#3fb950',fillColor:'#3fb950',fillOpacity:.9});
+      _pulsePhase=0;
+      _pulseIv=setInterval(()=>{
+        _pulsePhase=(_pulsePhase+0.15)%(2*Math.PI);
+        const p=Math.abs(Math.sin(_pulsePhase));
+        m.setRadius(r+p*5);
+        m.setStyle({fillOpacity:.55+p*.4});
+      },40);
+    } else {
+      m.setRadius(r);
+      m.setStyle({color:'#f85149',fillColor:'#f85149',fillOpacity:selectedDetTs?0.25:0.6});
+    }
+  });
+}
+function flyToEpi(lat,lon,ts){
+  selectedDetTs=ts||null;
+  applyMarkerSelection();
+  map.getPane('overlayPane').style.visibility='hidden';
+  map.flyTo([lat,lon],6,{duration:2.5});
+  map.once('moveend',()=>{map.getPane('overlayPane').style.visibility='';applyMarkerSelection();});
+}
 // audio alert
 let audioEnabled=true;
 let lastDetTs=null;
@@ -1017,8 +1054,11 @@ function update(){
     // detections
     const dDiv=document.getElementById('detections');
     const dets=[...d.detections].reverse();
+    const filteredDets=filterConfirmed?dets.filter(det=>det.usgs):dets;
     const cntEl=document.getElementById('det-count');
-    if(cntEl)cntEl.textContent=d.detections.length?`${d.detections.length} total`:'';
+    if(cntEl)cntEl.textContent=filterConfirmed
+      ?`${filteredDets.length} confirmed`
+      :(d.detections.length?`${d.detections.length} total`:'');
     // alert on new detection
     if(dets.length){
       const newest=dets[0];
@@ -1041,7 +1081,9 @@ function update(){
     const serverStart=d.server_start||0;
     const deployLabel=(()=>{const dt=new Date(serverStart*1000);return dt.toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:_activeTz()})+' '+_tzAbbr();})();
     let sepInserted=false;
-    const newHtml=dets.slice(0,100).map(det=>{
+    const moreEl=document.getElementById('det-more');
+    if(moreEl)moreEl.style.display=filteredDets.length>detDisplayLimit?'block':'none';
+    const newHtml=filteredDets.slice(0,detDisplayLimit).map(det=>{
       let sep='';
       if(!sepInserted && det.unix_ts < serverStart){
         sepInserted=true;
@@ -1070,7 +1112,7 @@ function update(){
         } else {
           const [la,lo]=det.epicenter;
           const ns=la>=0?'N':'S', ew=lo>=0?'E':'W';
-          epiChip=`<button class="chip chip-epi" onclick="flyToEpi(${la},${lo},${JSON.stringify(det.ts)})" title="Fly map to epicenter" style="cursor:pointer;border:none;font-family:inherit">&#x1F4CD; ${Math.abs(la).toFixed(1)}°${ns} ${Math.abs(lo).toFixed(1)}°${ew}</button>`;
+          epiChip=`<button class="chip chip-epi" onclick="event.stopPropagation();flyToEpi(${la},${lo},'${det.ts}')" title="Fly map to epicenter" style="cursor:pointer;border:none;font-family:inherit">&#x1F4CD; ${Math.abs(la).toFixed(1)}°${ns} ${Math.abs(lo).toFixed(1)}°${ew}</button>`;
         }
       }
       // catalog icon — right-aligned checkmark/cross
@@ -1089,7 +1131,7 @@ function update(){
           :`https://earthquake.usgs.gov/earthquakes/eventpage/${encodeURIComponent(eid)}/executive`):'';
         const inner=`<span style="color:${iconColor}">&#10003;</span>`;
         usgsIcon=href
-          ?`<a class="det-usgs-icon" href="${href}" target="_blank" rel="noopener" title="${escAttr(usgsTitle)}" style="text-decoration:none">${inner}</a>`
+          ?`<a class="det-usgs-icon" href="${href}" target="_blank" rel="noopener" title="${escAttr(usgsTitle)}" style="text-decoration:none" onclick="event.stopPropagation()">${inner}</a>`
           :`<span class="det-usgs-icon" title="${escAttr(usgsTitle)}">${inner}</span>`;
       } else if(det.usgs_checked){
         usgsTitle=`No match in USGS (M%(usgs_min_mag)s+) or EMSC (M%(emsc_min_mag)s+) for this window`;
@@ -1106,7 +1148,9 @@ function update(){
         +`\n${mbNote}`
         +(det.usgs?(()=>{const src=(det.usgs.source||'usgs').toUpperCase();return `\n${src}: M${det.usgs.mag}${magType} — ${place}`;})():det.usgs_checked?`\nNo catalog match (USGS M%(usgs_min_mag)s+ / EMSC M%(emsc_min_mag)s+)`:`\nCatalog lookup pending`);
       const selCls=det.ts===selectedDetTs?' det-selected':'';
-      return sep+`<div class="det${selCls}" title="${escAttr(detTitle)}">
+      const rowClick=(!det.teleseismic&&det.epicenter)
+        ?`onclick="flyToEpi(${det.epicenter[0]},${det.epicenter[1]},'${det.ts}')" style="cursor:pointer"`:'';
+      return sep+`<div class="det${selCls}" ${rowClick} title="${escAttr(detTitle)}">
         <span class="det-time">${tPart}</span>
         <span class="det-stas">${det.stations.join(' · ')}</span>
         <span class="det-chips-inline">${mbChip}${epiChip}</span>
@@ -1116,7 +1160,7 @@ function update(){
     }).join('');
     if(dDiv.innerHTML!==newHtml)dDiv.innerHTML=newHtml;
     // epicenter markers
-    detMarkers.forEach(m=>map.removeLayer(m));
+    detMarkers.forEach(({m})=>map.removeLayer(m));
     detMarkers.length=0;
     d.detections.forEach(det=>{
       if(!det.epicenter||det.teleseismic)return;
@@ -1126,14 +1170,17 @@ function update(){
       const mbLabel=det.mb?(det.mb_local?'local':det.mb_approx?'mb~'+det.mb.toFixed(1):'mb='+det.mb.toFixed(1)):'mb pending';
       const m=L.circleMarker([la,lo],{radius:r,color:'#f85149',fillColor:'#f85149',fillOpacity:.6})
         .bindPopup(`${fmtLocal(det.ts)}<br>${det.stations.join(', ')}<br>${mbLabel}`).addTo(map);
-      detMarkers.push(m);
+      detMarkers.push({m,ts:det.ts,r});
     });
+    applyMarkerSelection();
     // flyTo newest non-teleseismic epicenter when it first appears
     const newestEpi=dets.find(det=>det.epicenter&&!det.teleseismic);
     if(newestEpi && newestEpi.ts!==lastFlyTs){
       lastFlyTs=newestEpi.ts;
       const [la,lo]=newestEpi.epicenter;
-      map.flyTo([la,lo],5,{duration:1.5});
+      map.getPane('overlayPane').style.visibility='hidden';
+      map.flyTo([la,lo],5,{duration:2.5});
+      map.once('moveend',()=>{map.getPane('overlayPane').style.visibility='';applyMarkerSelection();});
     }
     // fullscreen overlay: station list + latest detection
     const fsoSta=document.getElementById('fso-stations');
@@ -1366,6 +1413,10 @@ def run_sensor(models):
     init_station_state()
     sensor_state.detections = _load_detections()
 
+    # Start Flask immediately so /health responds during rolling deploy health checks.
+    # SeedLink connects later after the network-ready delay.
+    start_web_server()
+
     startup_delay = int(os.environ.get('STARTUP_DELAY', '8'))
     if startup_delay > 0:
         print(f"Waiting {startup_delay}s for network...", flush=True)
@@ -1387,8 +1438,6 @@ def run_sensor(models):
     print(f"  Threshold: {THRESHOLD}  |  Consensus: {N_CONSENSUS}/{len(ALL_STATIONS)} in {CONSENSUS_WINDOW:.0f}s", flush=True)
     print(f"  Cooldown:  {ALERT_COOLDOWN}s  |  P-vel: {P_VEL_KM_S} km/s", flush=True)
     print(f"  Localize:  {LOC_MIN_STA}+ stations required", flush=True)
-
-    start_web_server()
 
     # Build per-server station groups; always run GEOFON, optionally IRIS
     server_groups = [(SEEDLINK_SERVER, STATIONS)]
