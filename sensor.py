@@ -11,7 +11,7 @@ All config via environment variables (see .env / fly.toml).
 
 STATIONS format: "GE.APE,GE.MORC,GE.BORG,GE.KBS"  (NET.STA pairs, comma-separated)
 """
-import os, time, math, collections, warnings, threading
+import os, time, math, collections, warnings, threading, dataclasses, json
 import numpy as np
 import torch, torch.nn as nn, torch.nn.functional as F
 warnings.filterwarnings('ignore')
@@ -29,6 +29,8 @@ CONSENSUS_WINDOW = float(os.environ.get('CONSENSUS_WINDOW', '120.0'))
 P_VEL_KM_S      = float(os.environ.get('P_VEL_KM_S', '8.0'))   # teleseismic P-wave speed
 LOC_MIN_STA      = int(os.environ.get('LOC_MIN_STA', '3'))       # stations needed for location
 P_LEAD_S         = float(os.environ.get('P_LEAD_S', '0.4'))      # model's pre-P horizon
+WEB_PORT         = int(os.environ.get('WEB_PORT', '8080'))
+TUI_MODE         = os.environ.get('TUI', '').lower() in ('1', 'true', 'yes')
 
 # Parse stations: "GE.APE,GE.MORC" → [('GE','APE'), ('GE','MORC')]
 STATIONS = []
@@ -56,6 +58,62 @@ def fmt_mag(mag_est):
     if mag_est > MAG_MAX_CREDIBLE:
         return "---"
     return f"M{max(-2.0, mag_est):.1f}"
+
+# ── Shared sensor state (thread-safe; drives web UI + TUI) ────────────────────
+@dataclasses.dataclass
+class StationSnap:
+    conf: float = 0.0
+    mag_est: float = 0.0
+    last_ts: float = 0.0
+
+@dataclasses.dataclass
+class DetectionSnap:
+    ts: str = ''
+    unix_ts: float = 0.0
+    stations: dataclasses.field(default_factory=list) = None
+    conf: float = 0.0
+    mb: float = None
+    epicenter: tuple = None   # (lat, lon) or None
+
+    def __post_init__(self):
+        if self.stations is None:
+            self.stations = []
+
+class SensorState:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.stations: dict = {}    # key → StationSnap
+        self.detections: list = []  # DetectionSnap, oldest first
+
+    def update_station(self, key, conf, mag_est):
+        with self._lock:
+            self.stations[key] = StationSnap(conf=conf, mag_est=mag_est, last_ts=time.time())
+
+    def add_detection(self, det):
+        with self._lock:
+            self.detections.append(det)
+            if len(self.detections) > 100:
+                self.detections.pop(0)
+
+    def update_mb(self, ref_unix, mb):
+        with self._lock:
+            for det in reversed(self.detections):
+                if abs(det.unix_ts - ref_unix) < 30:
+                    det.mb = mb
+                    break
+
+    def to_dict(self):
+        with self._lock:
+            return {
+                'stations': {k: dataclasses.asdict(v) for k, v in self.stations.items()},
+                'detections': [
+                    {**dataclasses.asdict(d), 'stations': list(d.stations)}
+                    for d in self.detections[-30:]
+                ],
+                'now': time.time(),
+            }
+
+sensor_state = SensorState()
 
 # ── Known station coordinates (lat, lon) — fallback if FDSN fetch fails ───────
 KNOWN_COORDS = {
@@ -283,7 +341,7 @@ def estimate_mb(key, p_arrival_unix, epicenter_latlon):
     return round(mb, 1), None
 
 
-def report_mb_deferred(stations_fired, p_arrivals, epicenter_latlon):
+def report_mb_deferred(stations_fired, p_arrivals, epicenter_latlon, det_unix):
     """Thread: waits MB_DELAY_S then measures mb from each station's ring buffer."""
     time.sleep(MB_DELAY_S)
     ts  = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
@@ -309,6 +367,7 @@ def report_mb_deferred(stations_fired, p_arrivals, epicenter_latlon):
     consensus = sorted(mbs)[len(mbs) // 2]
     label = f"({len(mbs)} stations, IASPEI)" if len(mbs) > 1 else "(IASPEI body-wave)"
     print(f"  [mb {ts}] mb={consensus:.1f}  {label}", flush=True)
+    sensor_state.update_mb(det_unix, consensus)
 
 
 # ── Multi-station consensus state ─────────────────────────────────────────────
@@ -349,6 +408,7 @@ def check_consensus(now):
 def on_inference(net, sta, conf, mag_est, now):
     ts  = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now))
     key = station_key(net, sta)
+    sensor_state.update_station(key, conf, mag_est)
 
     if conf >= THRESHOLD:
         # Record first P-wave arrival (corrected for model pre-P horizon)
@@ -406,12 +466,21 @@ def on_inference(net, sta, conf, mag_est, now):
                       f"(have {n_have} P-arrival(s))", flush=True)
 
             print(f"{'='*60}\n", flush=True)
+
+            det_rec = DetectionSnap(
+                ts=ts, unix_ts=now,
+                stations=sorted(stations_fired),
+                conf=conf,
+                epicenter=epicenter_latlon,
+            )
+            sensor_state.add_detection(det_rec)
+
             reset_arrivals()
 
             # Launch deferred mb computation in background
             threading.Thread(
                 target=report_mb_deferred,
-                args=(set(stations_fired), p_arr_snapshot, epicenter_latlon),
+                args=(set(stations_fired), p_arr_snapshot, epicenter_latlon, now),
                 daemon=True,
             ).start()
 
@@ -432,11 +501,221 @@ def on_inference(net, sta, conf, mag_est, now):
                 print(f"[{ts}] {key}  conf={conf:.3f}  mag={fmt_mag(mag_est)}", flush=True)
             station_status[key] = now
 
-# ── SeedLink client ────────────────────────────────────────────────────────────
-def run_sensor(models):
-    from obspy.clients.seedlink.easyseedlink import EasySeedLinkClient
+# ── Web UI ────────────────────────────────────────────────────────────────────
+_WEB_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Seismic Sensor</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0d1117;color:#c9d1d9;font-family:'Courier New',monospace;font-size:13px}
+header{background:#161b22;border-bottom:1px solid #30363d;padding:12px 20px;display:flex;align-items:center;gap:16px}
+header h1{font-size:16px;color:#58a6ff;letter-spacing:1px}
+#status-dot{width:8px;height:8px;border-radius:50%;background:#238636;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+#last-update{color:#6e7681;font-size:11px;margin-left:auto}
+.grid{display:grid;grid-template-columns:320px 1fr;gap:12px;padding:12px}
+.panel{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:12px}
+.panel h2{font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}
+.station{padding:6px 0;border-bottom:1px solid #21262d}
+.station:last-child{border-bottom:none}
+.sta-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
+.sta-name{color:#58a6ff;font-weight:bold}
+.sta-conf{font-size:11px}
+.conf-bar{height:4px;border-radius:2px;background:#21262d;margin-top:2px}
+.conf-fill{height:100%;border-radius:2px;transition:width .5s}
+.det{padding:6px 0;border-bottom:1px solid #21262d;font-size:11px}
+.det:last-child{border-bottom:none}
+.det-time{color:#8b949e}
+.det-sta{color:#58a6ff}
+.det-mb{color:#3fb950;font-weight:bold}
+.det-epi{color:#d29922}
+#map{height:320px;border-radius:4px;margin-top:10px}
+.right-col{display:flex;flex-direction:column;gap:12px}
+.no-data{color:#6e7681;font-style:italic;font-size:11px}
+</style>
+</head>
+<body>
+<header>
+  <div id="status-dot"></div>
+  <h1>&#127757; Seismic Sensor</h1>
+  <span id="last-update">connecting...</span>
+</header>
+<div class="grid">
+  <div class="panel">
+    <h2>Stations</h2>
+    <div id="stations"></div>
+    <div id="map"></div>
+  </div>
+  <div class="right-col">
+    <div class="panel" style="flex:1;overflow:auto">
+      <h2>Detections</h2>
+      <div id="detections"></div>
+    </div>
+  </div>
+</div>
+<script>
+const map = L.map('map', {zoomControl:false}).setView([45,10],2);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  {attribution:'&copy; OSM &copy; CARTO',subdomains:'abcd',maxZoom:19}).addTo(map);
+const staMarkers={}, detMarkers=[];
+function confColor(c){return c>=0.835?'#3fb950':c>=0.5?'#d29922':'#6e7681'}
+function fmtAge(ts){const s=Math.round(Date.now()/1000-ts);return s<60?s+'s':Math.round(s/60)+'m'}
+function update(){
+  fetch('/api/state').then(r=>r.json()).then(d=>{
+    document.getElementById('last-update').textContent='updated '+new Date().toLocaleTimeString();
+    // stations
+    const sDiv=document.getElementById('stations');
+    sDiv.innerHTML='';
+    const sCoords=%(station_coords_json)s;
+    Object.entries(d.stations).sort((a,b)=>b[1].conf-a[1].conf).forEach(([k,s])=>{
+      const pct=Math.round(s.conf*100);
+      const col=confColor(s.conf);
+      sDiv.innerHTML+=`<div class="station">
+        <div class="sta-row"><span class="sta-name">${k}</span>
+        <span class="sta-conf" style="color:${col}">${s.conf.toFixed(3)}</span></div>
+        <div class="conf-bar"><div class="conf-fill" style="width:${pct}%;background:${col}"></div></div>
+        <div style="color:#6e7681;font-size:10px">${fmtAge(s.last_ts)} ago</div>
+      </div>`;
+      if(sCoords[k] && !staMarkers[k]){
+        const [lat,lon]=sCoords[k];
+        staMarkers[k]=L.circleMarker([lat,lon],{radius:5,color:'#58a6ff',fillColor:'#58a6ff',fillOpacity:.8})
+          .bindTooltip(k).addTo(map);
+      }
+    });
+    // detections
+    const dDiv=document.getElementById('detections');
+    const dets=[...d.detections].reverse();
+    if(!dets.length){dDiv.innerHTML='<div class="no-data">No detections yet</div>';return}
+    dDiv.innerHTML=dets.slice(0,20).map(det=>{
+      const mb=det.mb?`<span class="det-mb">mb=${det.mb.toFixed(1)}</span>`:'<span style="color:#6e7681">mb…</span>';
+      let epi='';
+      if(det.epicenter){
+        const [la,lo]=det.epicenter;
+        epi=`<span class="det-epi"> ${Math.abs(la).toFixed(1)}°${la>=0?'N':'S'} ${Math.abs(lo).toFixed(1)}°${lo>=0?'E':'W'}</span>`;
+      }
+      return `<div class="det">
+        <span class="det-time">${det.ts}</span><br>
+        <span class="det-sta">${det.stations.join(', ')}</span>  ${mb}${epi}
+      </div>`;
+    }).join('');
+    // epicenter markers
+    detMarkers.forEach(m=>map.removeLayer(m));
+    detMarkers.length=0;
+    d.detections.forEach(det=>{
+      if(!det.epicenter)return;
+      const [la,lo]=det.epicenter;
+      const mb=det.mb||5;
+      const r=Math.max(4,Math.min(14,mb*2));
+      const m=L.circleMarker([la,lo],{radius:r,color:'#f85149',fillColor:'#f85149',fillOpacity:.6})
+        .bindPopup(`${det.ts}<br>${det.stations.join(', ')}<br>${det.mb?'mb='+det.mb.toFixed(1):'mb pending'}`).addTo(map);
+      detMarkers.push(m);
+    });
+  }).catch(()=>{document.getElementById('status-dot').style.background='#f85149'});
+}
+update();setInterval(update,3000);
+</script>
+</body>
+</html>"""
 
-    init_station_state()
+def start_web_server():
+    if WEB_PORT == 0:
+        return
+    try:
+        from flask import Flask, jsonify
+    except ImportError:
+        print("flask not installed — web UI disabled (pip install flask)", flush=True)
+        return
+
+    coords_json = json.dumps({k: list(v) for k, v in station_coords.items()})
+    html = _WEB_HTML.replace('%(station_coords_json)s', coords_json)
+
+    app = Flask(__name__)
+    import logging
+    logging.getLogger('werkzeug').setLevel(logging.ERROR)
+
+    @app.route('/')
+    def index():
+        return html
+
+    @app.route('/api/state')
+    def state():
+        return jsonify(sensor_state.to_dict())
+
+    t = threading.Thread(
+        target=lambda: app.run(host='0.0.0.0', port=WEB_PORT, threaded=True),
+        daemon=True,
+        name='web-ui',
+    )
+    t.start()
+    print(f"Web UI: http://0.0.0.0:{WEB_PORT}", flush=True)
+
+# ── Rich TUI ───────────────────────────────────────────────────────────────────
+def run_tui():
+    try:
+        from rich.live import Live
+        from rich.table import Table
+        from rich.panel import Panel
+        from rich.layout import Layout
+        from rich.columns import Columns
+        from rich import box
+    except ImportError:
+        print("rich not installed — TUI disabled (pip install rich)", flush=True)
+        return
+
+    def build_display():
+        snap = sensor_state.to_dict()
+        now  = snap['now']
+
+        sta_tbl = Table(box=box.SIMPLE_HEAVY, show_header=True, header_style="bold cyan",
+                        title="[bold]Stations[/bold]", min_width=42)
+        sta_tbl.add_column("Station", style="cyan")
+        sta_tbl.add_column("Conf",    justify="right")
+        sta_tbl.add_column("Mag",     justify="right")
+        sta_tbl.add_column("Age",     justify="right", style="dim")
+        for key, s in sorted(snap['stations'].items()):
+            age = now - s['last_ts']
+            c   = s['conf']
+            color = "green" if c >= THRESHOLD else "yellow" if c > 0.5 else "dim"
+            sta_tbl.add_row(key,
+                            f"[{color}]{c:.3f}[/{color}]",
+                            fmt_mag(s['mag_est']),
+                            f"{age:.0f}s")
+
+        det_lines = []
+        for det in reversed(snap['detections'][-12:]):
+            mb  = f"[green]mb={det['mb']:.1f}[/green]" if det['mb'] is not None else "[dim]mb…[/dim]"
+            epi = ""
+            if det['epicenter']:
+                la, lo = det['epicenter']
+                epi = f"  [yellow]{abs(la):.1f}°{'N' if la>=0 else 'S'} {abs(lo):.1f}°{'E' if lo>=0 else 'W'}[/yellow]"
+            sta_str = ', '.join(det['stations'])
+            det_lines.append(f"[dim]{det['ts']}[/dim]  [cyan]{sta_str}[/cyan]  {mb}{epi}")
+
+        det_panel = Panel(
+            '\n'.join(det_lines) if det_lines else "[dim]No detections yet[/dim]",
+            title="[bold]Detections[/bold]",
+        )
+        layout = Layout()
+        layout.split_column(
+            Layout(Panel(sta_tbl), size=len(snap['stations']) + 6, name="stations"),
+            Layout(det_panel, name="detections"),
+        )
+        return layout
+
+    with Live(build_display(), refresh_per_second=1, screen=True) as live:
+        while True:
+            live.update(build_display())
+            time.sleep(1)
+
+# ── SeedLink client ────────────────────────────────────────────────────────────
+def seedlink_loop(models):
+    """Connect to SeedLink, stream data, run inference. Retries forever."""
+    from obspy.clients.seedlink.easyseedlink import EasySeedLinkClient
 
     class Sensor(EasySeedLinkClient):
         def on_data(self, trace):
@@ -475,30 +754,7 @@ def run_sensor(models):
             conf, mag_est = ensemble_predict(models, normalize_window(window))
             on_inference(net, sta, conf, mag_est, time.time())
 
-    startup_delay = int(os.environ.get('STARTUP_DELAY', '8'))
-    if startup_delay > 0:
-        print(f"Waiting {startup_delay}s for network...", flush=True)
-        time.sleep(startup_delay)
-
-    print(f"\nFetching station coordinates...", flush=True)
-    try:
-        fetch_station_coords()
-    except Exception as e:
-        print(f"  coords fetch failed ({e}) — using hardcoded fallback", flush=True)
-        for net, sta in STATIONS:
-            key = f"{net}.{sta}"
-            if key in KNOWN_COORDS:
-                station_coords[key] = KNOWN_COORDS[key]
-
     print(f"\nConnecting to {SEEDLINK_SERVER}...", flush=True)
-    station_list = ', '.join(f"{n}.{s}" for n, s in STATIONS)
-    print(f"  Stations:  {station_list}", flush=True)
-    print(f"  Channels:  {CHANNELS}", flush=True)
-    print(f"  Threshold: {THRESHOLD}  |  Consensus: {N_CONSENSUS}/{len(STATIONS)} in {CONSENSUS_WINDOW:.0f}s", flush=True)
-    print(f"  Cooldown:  {ALERT_COOLDOWN}s  |  P-vel: {P_VEL_KM_S} km/s", flush=True)
-    print(f"  Localize:  {LOC_MIN_STA}+ stations required", flush=True)
-    print("Ready. Ctrl+C to stop.\n", flush=True)
-
     backoff = 5
     while True:
         try:
@@ -516,6 +772,44 @@ def run_sensor(models):
             print(f"  Retrying in {backoff}s...", flush=True)
             time.sleep(backoff)
             backoff = min(backoff * 2, 300)
+
+
+def run_sensor(models):
+    init_station_state()
+
+    startup_delay = int(os.environ.get('STARTUP_DELAY', '8'))
+    if startup_delay > 0:
+        print(f"Waiting {startup_delay}s for network...", flush=True)
+        time.sleep(startup_delay)
+
+    print(f"\nFetching station coordinates...", flush=True)
+    try:
+        fetch_station_coords()
+    except Exception as e:
+        print(f"  coords fetch failed ({e}) — using hardcoded fallback", flush=True)
+        for net, sta in STATIONS:
+            key = f"{net}.{sta}"
+            if key in KNOWN_COORDS:
+                station_coords[key] = KNOWN_COORDS[key]
+
+    station_list = ', '.join(f"{n}.{s}" for n, s in STATIONS)
+    print(f"  Stations:  {station_list}", flush=True)
+    print(f"  Channels:  {CHANNELS}", flush=True)
+    print(f"  Threshold: {THRESHOLD}  |  Consensus: {N_CONSENSUS}/{len(STATIONS)} in {CONSENSUS_WINDOW:.0f}s", flush=True)
+    print(f"  Cooldown:  {ALERT_COOLDOWN}s  |  P-vel: {P_VEL_KM_S} km/s", flush=True)
+    print(f"  Localize:  {LOC_MIN_STA}+ stations required", flush=True)
+
+    start_web_server()
+
+    if TUI_MODE:
+        # SeedLink runs in a daemon thread; TUI takes the main thread
+        print("TUI mode — starting Rich display...", flush=True)
+        sl_thread = threading.Thread(target=seedlink_loop, args=(models,), daemon=True, name='seedlink')
+        sl_thread.start()
+        run_tui()
+    else:
+        print("Ready. Ctrl+C to stop.\n", flush=True)
+        seedlink_loop(models)
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
