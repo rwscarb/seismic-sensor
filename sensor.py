@@ -78,6 +78,7 @@ class DetectionSnap:
     logit_gap: float = 0.0   # raw mean logit gap before temperature scaling
     mb: float = None
     mb_approx: bool = False   # True when epicenter unknown; Q(Δ) assumed at 45°
+    mb_local: bool = False    # True when amplitude ratio suggests a local/regional source
     epicenter: tuple = None   # (lat, lon) or None
     usgs: dict = None         # USGS ComCat event if matched
     usgs_checked: bool = False  # True once USGS lookup has completed (match or not)
@@ -109,6 +110,7 @@ def _load_detections():
                 logit_gap=r.get('logit_gap', 0.0),
                 mb=r.get('mb'),
                 mb_approx=r.get('mb_approx', False),
+                mb_local=r.get('mb_local', False),
                 epicenter=tuple(r['epicenter']) if r.get('epicenter') else None,
                 usgs=r.get('usgs'),
                 usgs_checked=r.get('usgs_checked', False),
@@ -140,12 +142,13 @@ class SensorState:
             snap = list(self.detections)
         _save_detections(snap)
 
-    def update_mb(self, ref_unix, mb, approx=False):
+    def update_mb(self, ref_unix, mb, approx=False, local=False):
         with self._lock:
             for det in reversed(self.detections):
                 if abs(det.unix_ts - ref_unix) < 30:
                     det.mb = mb
                     det.mb_approx = approx
+                    det.mb_local = local
                     break
             snap = list(self.detections)
         _save_detections(snap)
@@ -313,22 +316,28 @@ def locate_epicenter(arrivals):
     sta_lon  = np.array([station_coords[k][1] for k, _ in obs])
     arr_time = np.array([t for _, t in obs])
 
+    # Analytically solve for optimal t0 given lat/lon (reduces to 2-D search)
     def cost(params):
-        lat0, lon0, t0 = params
+        lat0, lon0 = params
         dists = np.array([haversine_km(lat0, lon0, sta_lat[i], sta_lon[i])
                           for i in range(len(obs))])
-        pred  = t0 + dists / P_VEL_KM_S
+        travel = dists / P_VEL_KM_S
+        t0_opt = float(np.mean(arr_time - travel))
+        pred   = t0_opt + travel
         return float(np.sum((pred - arr_time)**2))
 
-    # Initial guess: station centroid, rough origin time
+    # Initial guess: station centroid
     lat0 = float(np.mean(sta_lat))
     lon0 = float(np.mean(sta_lon))
-    t0   = float(np.min(arr_time)) - 1200.0  # assume 20-min travel for teleseismic
 
-    res = minimize(cost, [lat0, lon0, t0], method='Nelder-Mead',
+    res = minimize(cost, [lat0, lon0], method='Nelder-Mead',
                    options={'xatol': 0.05, 'fatol': 0.1, 'maxiter': 50000})
 
-    lat_e, lon_e, t0_e = res.x
+    lat_e, lon_e = res.x
+    # Recover t0 analytically from final solution
+    dists_final = np.array([haversine_km(lat_e, lon_e, sta_lat[i], sta_lon[i])
+                            for i in range(len(obs))])
+    t0_e = float(np.mean(arr_time - dists_final / P_VEL_KM_S))
     n = len(obs)
     rms = math.sqrt(res.fun / n)
 
@@ -407,7 +416,7 @@ def estimate_mb(key, p_arrival_unix, epicenter_latlon):
     Q = (5.0 + 0.013 * dist_deg) if dist_deg < 20.0 else (5.1 + 0.015 * dist_deg)
     mb = max(0.0, min(10.0, math.log10(A / T) + Q))
     print(f"  [mb dbg] {key}: A={A:.1f}nm T={T:.2f}s A/T={A/T:.1f} Q={Q:.2f}({dist_deg:.0f}deg{'~' if approx else ''}) -> mb={mb:.1f}", flush=True)
-    return round(mb, 1), ('approx' if approx else None)
+    return round(mb, 1), ('approx' if approx else None), A
 
 
 def report_mb_deferred(stations_fired, p_arrivals, epicenter_latlon, det_unix):
@@ -419,7 +428,7 @@ def report_mb_deferred(stations_fired, p_arrivals, epicenter_latlon, det_unix):
         p_t = p_arrivals.get(k)
         if p_t is None:
             continue
-        mb, tag = estimate_mb(k, p_t, epicenter_latlon)
+        mb, tag, amp = estimate_mb(k, p_t, epicenter_latlon)
         if mb is not None:
             dist_str = ""
             if epicenter_latlon and k in station_coords:
@@ -428,20 +437,24 @@ def report_mb_deferred(stations_fired, p_arrivals, epicenter_latlon, det_unix):
                 dist_str = f"  Δ={d:.1f}°"
             flag = " [approx Δ=45°]" if tag == 'approx' else ""
             print(f"  [mb {ts}] {k}: mb={mb:.1f}{dist_str}{flag}", flush=True)
-            mbs.append((mb, tag))
+            mbs.append((mb, tag, amp))
         else:
             print(f"  [mb {ts}] {k}: skipped ({tag})", flush=True)
 
     if not mbs:
         return
-    mb_vals = [m for m, _ in mbs]
-    tags     = [t for _, t in mbs]
+    mb_vals  = [m for m, _, _ in mbs]
+    tags     = [t for _, t, _ in mbs]
+    amp_vals = [a for _, _, a in mbs]
     consensus = float(np.median(mb_vals))
     approx    = all(t == 'approx' for t in tags)
+    # If no epicenter and stations show large amplitude spread, source is likely local/regional
+    amp_ratio = max(amp_vals) / min(amp_vals) if len(amp_vals) > 1 and min(amp_vals) > 0 else 1.0
+    local_flag = approx and amp_ratio > 5.0
     n = len(mb_vals)
-    label = f"({'~' if approx else ''}{n} stations, IASPEI{', Δ≈45°' if approx else ''})"
+    label = f"({'~' if approx else ''}{n} stations, IASPEI{', Δ≈45°' if approx else ''}{', likely local amp_ratio=' + f'{amp_ratio:.1f}' if local_flag else ''})"
     print(f"  [mb {ts}] mb={'~' if approx else ''}{consensus:.1f}  {label}", flush=True)
-    sensor_state.update_mb(det_unix, consensus, approx=approx)
+    sensor_state.update_mb(det_unix, consensus, approx=approx, local=local_flag)
 
 
 # ── Multi-station consensus state ─────────────────────────────────────────────
@@ -757,7 +770,7 @@ function update(){
     const sumEl=document.getElementById('last-event-summary');
     if(sumEl&&dets.length){
       const ld=dets[0];
-      const mbStr=ld.mb!=null?(ld.mb_approx?`mb~${ld.mb.toFixed(1)}`:`mb=${ld.mb.toFixed(1)}`):'mb…';
+      const mbStr=ld.mb!=null?(ld.mb_local?'local':ld.mb_approx?`mb~${ld.mb.toFixed(1)}`:`mb=${ld.mb.toFixed(1)}`):'mb…';
       sumEl.textContent=`Last: ${mbStr} · ${fmtAge(ld.unix_ts)} ago`;
     }
     if(!dets.length){dDiv.innerHTML='<div class="no-data">No detections yet</div>';return}
@@ -767,9 +780,13 @@ function update(){
       // mb chip
       let mbChip='';
       if(det.mb!=null){
-        const lbl=(det.mb_approx?'mb~':'mb=')+det.mb.toFixed(1);
-        const cls=mbChipClass(det.mb)+(det.mb_approx?' chip-mb-approx':'');
-        mbChip=`<span class="chip ${cls}" title="${det.mb_approx?'approx, assumed distance 45 deg':'IASPEI body-wave'}">${lbl}</span>`;
+        if(det.mb_local){
+          mbChip=`<span class="chip chip-mb-approx" title="Amplitude ratio between stations suggests a local or regional source; IASPEI mb is not reliable for this detection">local</span>`;
+        } else {
+          const lbl=(det.mb_approx?'mb~':'mb=')+det.mb.toFixed(1);
+          const cls=mbChipClass(det.mb)+(det.mb_approx?' chip-mb-approx':'');
+          mbChip=`<span class="chip ${cls}" title="${det.mb_approx?'approx, assumed distance 45 deg':'IASPEI body-wave'}">${lbl}</span>`;
+        }
       } else {
         mbChip=`<span class="chip chip-usgs-pending">mb…</span>`;
       }
@@ -794,9 +811,10 @@ function update(){
       // tooltip
       const place=det.usgs?(det.usgs.place||''):'';
       const magType=det.usgs?(det.usgs.magType||''):'';
+      const mbNote=det.mb!=null?(det.mb_local?'local source (amplitude ratio too high for teleseismic mb)':det.mb_approx?`mb~${det.mb.toFixed(1)} (IASPEI, assumed dist=45deg)`:`mb=${det.mb.toFixed(1)} (IASPEI)`):'mb pending...';
       const detTitle=`${det.ts}\nstations: ${det.stations.join(', ')}\nconf: ${det.conf.toFixed(4)}  gap: ${(det.logit_gap||0).toFixed(1)}`
         +(det.epicenter?`\nepi: ${det.epicenter[0].toFixed(2)}N ${det.epicenter[1].toFixed(2)}E`:'')
-        +(det.mb!=null?`\n${det.mb_approx?'mb~':'mb='}${det.mb.toFixed(1)} (IASPEI${det.mb_approx?', assumed dist=45deg':''})`:`\nmb pending...`)
+        +`\n${mbNote}`
         +(det.usgs?`\nUSGS: M${det.usgs.mag}${magType} - ${place}`:det.usgs_checked?`\nUSGS: no M%(usgs_min_mag)s+ match`:`\nUSGS lookup pending...`);
       return `<div class="det" title="${escAttr(detTitle)}">
         <div class="det-row1">
@@ -816,8 +834,9 @@ function update(){
       const [la,lo]=det.epicenter;
       const mb=det.mb||5;
       const r=Math.max(4,Math.min(14,mb*2));
+      const mbLabel=det.mb?(det.mb_local?'local':det.mb_approx?'mb~'+det.mb.toFixed(1):'mb='+det.mb.toFixed(1)):'mb pending';
       const m=L.circleMarker([la,lo],{radius:r,color:'#f85149',fillColor:'#f85149',fillOpacity:.6})
-        .bindPopup(`${det.ts}<br>${det.stations.join(', ')}<br>${det.mb?(det.mb_approx?'mb~':'mb=')+det.mb.toFixed(1):'mb pending'}`).addTo(map);
+        .bindPopup(`${det.ts}<br>${det.stations.join(', ')}<br>${mbLabel}`).addTo(map);
       detMarkers.push(m);
     });
   }).catch(()=>{document.getElementById('status-dot').style.background='#f85149'});
