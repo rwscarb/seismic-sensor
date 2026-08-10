@@ -16,7 +16,8 @@ primary_region = 'fra'
   LOC_MIN_STA      = '3'
   P_LEAD_S         = '0.4'
   CHECKPOINT_DIR   = '/checkpoints'
-  DETECTIONS_PATH  = '/tmp/detections.json'
+  DETECTIONS_PATH  = '/data/detections.json'
+  USGS_MIN_MAG     = '3.0'
 
 [http_service]
   internal_port        = 8080
@@ -24,6 +25,10 @@ primary_region = 'fra'
   auto_stop_machines   = "off"
   auto_start_machines  = false
   min_machines_running = 1
+
+[[mounts]]
+  source      = "seismic_data"
+  destination = "/data"
 
 [[vm]]
   size   = 'shared-cpu-1x'

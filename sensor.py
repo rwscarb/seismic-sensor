@@ -80,6 +80,7 @@ class DetectionSnap:
     mb_approx: bool = False   # True when epicenter unknown; Q(Δ) assumed at 45°
     epicenter: tuple = None   # (lat, lon) or None
     usgs: dict = None         # USGS ComCat event if matched
+    usgs_checked: bool = False  # True once USGS lookup has completed (match or not)
 
     def __post_init__(self):
         if self.stations is None:
@@ -110,6 +111,7 @@ def _load_detections():
                 mb_approx=r.get('mb_approx', False),
                 epicenter=tuple(r['epicenter']) if r.get('epicenter') else None,
                 usgs=r.get('usgs'),
+                usgs_checked=r.get('usgs_checked', False),
             )
             dets.append(d)
         print(f"[persist] loaded {len(dets)} detections from {DETECTIONS_PATH}", flush=True)
@@ -153,6 +155,7 @@ class SensorState:
             for det in reversed(self.detections):
                 if abs(det.unix_ts - ref_unix) < 30:
                     det.usgs = event
+                    det.usgs_checked = True
                     break
             snap = list(self.detections)
         _save_detections(snap)
@@ -368,7 +371,9 @@ def estimate_mb(key, p_arrival_unix, epicenter_latlon):
     try:
         tr.remove_response(inventory=station_inventory[key],
                            output="DISP", water_level=60,
-                           pre_filt=(0.01, 0.05, 4.0, 8.0))
+                           pre_filt=(0.005, 0.01, 3.0, 5.0))
+        # IASPEI mb is defined in the 1 Hz band — bandpass before measuring A and T
+        tr.filter('bandpass', freqmin=0.5, freqmax=2.0, corners=4, zerophase=True)
     except Exception as e:
         return None, f"response removal: {e}"
 
@@ -383,9 +388,10 @@ def estimate_mb(key, p_arrival_unix, epicenter_latlon):
     if A <= 0:
         return None, "zero amplitude"
 
+    # Measure T from zero crossings; after 1 Hz bandpass T should be ~0.5-2s
     zc = np.where(np.diff(np.sign(p_win)))[0]
     T  = float(2.0 * np.mean(np.diff(zc)) / TARGET_SRATE) if len(zc) >= 4 else 1.0
-    T  = max(0.05, min(5.0, T))
+    T  = max(0.5, min(2.0, T))   # IASPEI: constrain to teleseismic P-wave band
 
     # Q(Δ) — Richter (1958) table approximation for shallow focus
     approx = False
@@ -400,6 +406,7 @@ def estimate_mb(key, p_arrival_unix, epicenter_latlon):
 
     Q = (5.0 + 0.013 * dist_deg) if dist_deg < 20.0 else (5.1 + 0.015 * dist_deg)
     mb = max(0.0, min(10.0, math.log10(A / T) + Q))
+    print(f"  [mb dbg] {key}: A={A:.1f}nm T={T:.2f}s A/T={A/T:.1f} Q={Q:.2f}({dist_deg:.0f}deg{'~' if approx else ''}) -> mb={mb:.1f}", flush=True)
     return round(mb, 1), ('approx' if approx else None)
 
 
@@ -429,7 +436,7 @@ def report_mb_deferred(stations_fired, p_arrivals, epicenter_latlon, det_unix):
         return
     mb_vals = [m for m, _ in mbs]
     tags     = [t for _, t in mbs]
-    consensus = sorted(mb_vals)[len(mb_vals) // 2]
+    consensus = float(np.median(mb_vals))
     approx    = all(t == 'approx' for t in tags)
     n = len(mb_vals)
     label = f"({'~' if approx else ''}{n} stations, IASPEI{', Δ≈45°' if approx else ''})"
@@ -626,6 +633,7 @@ def report_usgs_deferred(det_unix, p_arrivals):
         sensor_state.update_usgs(det_unix, event)
     else:
         print(f"  [usgs {ts}] no USGS match (M{USGS_MIN_MAG}+ in window)", flush=True)
+        sensor_state.update_usgs(det_unix, None)
 
 
 # ── Web UI ────────────────────────────────────────────────────────────────────
@@ -640,16 +648,19 @@ _WEB_HTML = """<!DOCTYPE html>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#0d1117;color:#c9d1d9;font-family:'Courier New',monospace;font-size:13px}
-header{background:#161b22;border-bottom:1px solid #30363d;padding:12px 20px;display:flex;align-items:center;gap:16px}
-header h1{font-size:16px;color:#58a6ff;letter-spacing:1px}
+header{background:#161b22;border-bottom:1px solid #30363d;padding:10px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 #cfg{color:#6e7681;font-size:11px}
 [title]{cursor:help}
-#status-dot{width:8px;height:8px;border-radius:50%;background:#238636;animation:pulse 2s infinite}
+#status-dot{width:8px;height:8px;border-radius:50%;background:#238636;animation:pulse 2s infinite;flex-shrink:0}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 #last-update{color:#6e7681;font-size:11px;margin-left:auto}
+#last-event-summary{font-size:11px;color:#8b949e;border-left:1px solid #30363d;padding-left:12px}
 .grid{display:grid;grid-template-columns:320px 1fr;gap:12px;padding:12px}
 .panel{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:12px}
-.panel h2{font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}
+.panel-hdr{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+.panel-hdr h2{font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:1px}
+.det-count{font-size:10px;color:#6e7681;background:#21262d;border-radius:8px;padding:1px 6px}
 .station{padding:6px 0;border-bottom:1px solid #21262d}
 .station:last-child{border-bottom:none}
 .sta-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
@@ -657,12 +668,23 @@ header h1{font-size:16px;color:#58a6ff;letter-spacing:1px}
 .sta-conf{font-size:11px}
 .conf-bar{height:4px;border-radius:2px;background:#21262d;margin-top:2px}
 .conf-fill{height:100%;border-radius:2px;transition:width .5s}
-.det{padding:6px 0;border-bottom:1px solid #21262d;font-size:11px}
+.det{padding:8px 0;border-bottom:1px solid #21262d;font-size:11px}
+.det:first-child{border-top:none}
 .det:last-child{border-bottom:none}
+.det-row1{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
 .det-time{color:#8b949e}
+.det-age{color:#6e7681;font-size:10px}
 .det-sta{color:#58a6ff}
-.det-mb{color:#3fb950;font-weight:bold}
-.det-epi{color:#d29922}
+.det-chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:3px}
+.chip{font-size:10px;border-radius:3px;padding:1px 5px;font-weight:bold}
+.chip-mb-low{color:#3fb950;background:#0d2a15}
+.chip-mb-mid{color:#d29922;background:#2a1f00}
+.chip-mb-high{color:#f85149;background:#2d1216}
+.chip-mb-approx{opacity:.8;font-style:italic}
+.chip-epi{color:#d29922;background:#2a1f00}
+.chip-usgs{color:#a371f7;background:#1e1129}
+.chip-usgs-none{color:#6e7681;background:#161b22;border:1px solid #30363d}
+.chip-usgs-pending{color:#6e7681;background:#161b22}
 #map{height:320px;border-radius:4px;margin-top:10px}
 .right-col{display:flex;flex-direction:column;gap:12px}
 .no-data{color:#6e7681;font-style:italic;font-size:11px}
@@ -673,17 +695,18 @@ header h1{font-size:16px;color:#58a6ff;letter-spacing:1px}
   <div id="status-dot"></div>
   <h1>&#127757; Seismic Sensor</h1>
   <span id="cfg" title="SeedLink: %(seedlink)s">%(cfg_text)s</span>
+  <span id="last-event-summary"></span>
   <span id="last-update">connecting...</span>
 </header>
 <div class="grid">
   <div class="panel">
-    <h2>Stations</h2>
+    <div class="panel-hdr"><h2>Stations</h2></div>
     <div id="stations"></div>
     <div id="map"></div>
   </div>
   <div class="right-col">
     <div class="panel" style="flex:1;overflow:auto">
-      <h2>Detections</h2>
+      <div class="panel-hdr"><h2>Detections</h2><span id="det-count" class="det-count"></span></div>
       <div id="detections"></div>
     </div>
   </div>
@@ -728,28 +751,63 @@ function update(){
     // detections
     const dDiv=document.getElementById('detections');
     const dets=[...d.detections].reverse();
+    const cntEl=document.getElementById('det-count');
+    if(cntEl)cntEl.textContent=d.detections.length?`${d.detections.length} total`:'';
+    // last-event summary in header
+    const sumEl=document.getElementById('last-event-summary');
+    if(sumEl&&dets.length){
+      const ld=dets[0];
+      const mbStr=ld.mb!=null?(ld.mb_approx?`mb~${ld.mb.toFixed(1)}`:`mb=${ld.mb.toFixed(1)}`):'mb…';
+      sumEl.textContent=`Last: ${mbStr} · ${fmtAge(ld.unix_ts)} ago`;
+    }
     if(!dets.length){dDiv.innerHTML='<div class="no-data">No detections yet</div>';return}
     const escAttr=s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
-    dDiv.innerHTML=dets.slice(0,20).map(det=>{
-      const mb=det.mb!=null?`<span class="det-mb">${det.mb_approx?'mb~':'mb='}${det.mb.toFixed(1)}</span>`:'<span style="color:#6e7681">mb…</span>';
-      let epi='';
+    const mbChipClass=mb=>mb>=7?'chip-mb-high':mb>=5?'chip-mb-mid':'chip-mb-low';
+    const newHtml=dets.slice(0,20).map(det=>{
+      // mb chip
+      let mbChip='';
+      if(det.mb!=null){
+        const lbl=(det.mb_approx?'mb~':'mb=')+det.mb.toFixed(1);
+        const cls=mbChipClass(det.mb)+(det.mb_approx?' chip-mb-approx':'');
+        mbChip=`<span class="chip ${cls}" title="${det.mb_approx?'approx, assumed distance 45 deg':'IASPEI body-wave'}">${lbl}</span>`;
+      } else {
+        mbChip=`<span class="chip chip-usgs-pending">mb…</span>`;
+      }
+      // epicenter chip
+      let epiChip='';
       if(det.epicenter){
         const [la,lo]=det.epicenter;
-        epi=`<span class="det-epi"> ${Math.abs(la).toFixed(1)}°${la>=0?'N':'S'} ${Math.abs(lo).toFixed(1)}°${lo>=0?'E':'W'}</span>`;
+        const ns=la>=0?'N':'S', ew=lo>=0?'E':'W';
+        epiChip=`<span class="chip chip-epi">${Math.abs(la).toFixed(1)}°${ns} ${Math.abs(lo).toFixed(1)}°${ew}</span>`;
       }
+      // usgs chip
+      let usgsChip='';
+      if(det.usgs){
+        const place=det.usgs.place||'';
+        const mt=det.usgs.magType||'';
+        usgsChip=`<span class="chip chip-usgs" title="${escAttr(place)}">M${det.usgs.mag}${mt} ${place.split(',')[0]}</span>`;
+      } else if(det.usgs_checked){
+        usgsChip=`<span class="chip chip-usgs-none" title="No M%(usgs_min_mag)s+ event found in USGS catalog for this window">USGS: no match</span>`;
+      } else {
+        usgsChip=`<span class="chip chip-usgs-pending">USGS…</span>`;
+      }
+      // tooltip
       const place=det.usgs?(det.usgs.place||''):'';
       const magType=det.usgs?(det.usgs.magType||''):'';
-      const detTitle=`${det.ts}\nstations: ${det.stations.join(', ')}\nconf: ${det.conf.toFixed(4)}  logit gap: ${(det.logit_gap||0).toFixed(1)}`
+      const detTitle=`${det.ts}\nstations: ${det.stations.join(', ')}\nconf: ${det.conf.toFixed(4)}  gap: ${(det.logit_gap||0).toFixed(1)}`
         +(det.epicenter?`\nepi: ${det.epicenter[0].toFixed(2)}N ${det.epicenter[1].toFixed(2)}E`:'')
-        +(det.mb!=null?`\n${det.mb_approx?'mb~':'mb='}${det.mb.toFixed(1)} (IASPEI${det.mb_approx?', assumed Δ=45°':''})`:`\nmb pending...`)
-        +(det.usgs?`\nUSGS: M${det.usgs.mag}${magType} - ${place}`:`\nUSGS lookup pending...`);
-      let usgsStr='';
-      if(det.usgs){usgsStr=`<span style="color:#a371f7"> ·M${det.usgs.mag}${magType} ${place.split(',')[0]}</span>`}
+        +(det.mb!=null?`\n${det.mb_approx?'mb~':'mb='}${det.mb.toFixed(1)} (IASPEI${det.mb_approx?', assumed dist=45deg':''})`:`\nmb pending...`)
+        +(det.usgs?`\nUSGS: M${det.usgs.mag}${magType} - ${place}`:det.usgs_checked?`\nUSGS: no M%(usgs_min_mag)s+ match`:`\nUSGS lookup pending...`);
       return `<div class="det" title="${escAttr(detTitle)}">
-        <span class="det-time">${det.ts}</span><br>
-        <span class="det-sta">${det.stations.join(', ')}</span>  ${mb}${epi}${usgsStr}
+        <div class="det-row1">
+          <span class="det-time">${det.ts}</span>
+          <span class="det-age">${fmtAge(det.unix_ts)} ago</span>
+        </div>
+        <div style="color:#58a6ff;font-size:11px;margin-bottom:3px">${det.stations.join(' · ')}</div>
+        <div class="det-chips">${mbChip}${epiChip}${usgsChip}</div>
       </div>`;
     }).join('');
+    if(dDiv.innerHTML!==newHtml)dDiv.innerHTML=newHtml;
     // epicenter markers
     detMarkers.forEach(m=>map.removeLayer(m));
     detMarkers.length=0;
@@ -789,6 +847,7 @@ def start_web_server():
         .replace('%(cfg_text)s',            cfg_text)
         .replace('%(seedlink)s',            SEEDLINK_SERVER)
         .replace('%(threshold)s',           str(THRESHOLD))
+        .replace('%(usgs_min_mag)s',        str(USGS_MIN_MAG))
     )
 
     app = Flask(__name__)
