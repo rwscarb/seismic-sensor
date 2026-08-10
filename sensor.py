@@ -31,6 +31,8 @@ LOC_MIN_STA      = int(os.environ.get('LOC_MIN_STA', '3'))       # stations need
 P_LEAD_S         = float(os.environ.get('P_LEAD_S', '0.4'))      # model's pre-P horizon
 WEB_PORT         = int(os.environ.get('WEB_PORT', '8080'))
 TUI_MODE         = os.environ.get('TUI', '').lower() in ('1', 'true', 'yes')
+TEMP_SCALE       = float(os.environ.get('TEMP_SCALE', '1.0'))   # temperature for classifier calibration
+USGS_MIN_MAG     = float(os.environ.get('USGS_MIN_MAG', '4.0')) # min magnitude for USGS catalog lookup
 
 # Parse stations: "GE.APE,GE.MORC" → [('GE','APE'), ('GE','MORC')]
 STATIONS = []
@@ -72,8 +74,10 @@ class DetectionSnap:
     unix_ts: float = 0.0
     stations: dataclasses.field(default_factory=list) = None
     conf: float = 0.0
+    logit_gap: float = 0.0   # raw mean logit gap before temperature scaling
     mb: float = None
     epicenter: tuple = None   # (lat, lon) or None
+    usgs: dict = None         # USGS ComCat event if matched
 
     def __post_init__(self):
         if self.stations is None:
@@ -100,6 +104,13 @@ class SensorState:
             for det in reversed(self.detections):
                 if abs(det.unix_ts - ref_unix) < 30:
                     det.mb = mb
+                    break
+
+    def update_usgs(self, ref_unix, event):
+        with self._lock:
+            for det in reversed(self.detections):
+                if abs(det.unix_ts - ref_unix) < 30:
+                    det.usgs = event
                     break
 
     def to_dict(self):
@@ -197,7 +208,9 @@ class StreamingNet(nn.Module):
         with torch.no_grad():
             xb = torch.tensor(window_np[None], dtype=torch.float32)
             logits, mag = self(xb)
-        return float(F.softmax(logits, dim=1)[0, 1]), float(mag[0])
+        gap    = float(logits[0, 1] - logits[0, 0])          # raw logit gap (pre-scaling)
+        scaled = logits / TEMP_SCALE
+        return float(F.softmax(scaled, dim=1)[0, 1]), float(mag[0]), gap
 
 # ── Load ensemble ─────────────────────────────────────────────────────────────
 def load_ensemble():
@@ -214,8 +227,11 @@ def load_ensemble():
     return models
 
 def ensemble_predict(models, window_np):
-    confs, mags = zip(*[m.predict(window_np) for m in models])
-    return float(np.mean(confs)), float(np.mean(mags))
+    results = [m.predict(window_np) for m in models]
+    confs = [r[0] for r in results]
+    mags  = [r[1] for r in results]
+    gaps  = [r[2] for r in results]
+    return float(np.mean(confs)), float(np.mean(mags)), float(np.mean(gaps))
 
 def normalize_window(w):
     w = w.copy()
@@ -405,7 +421,7 @@ def check_consensus(now):
     stations_fired = set(d[1] for d in recent_detections)
     return len(stations_fired) >= N_CONSENSUS, stations_fired
 
-def on_inference(net, sta, conf, mag_est, now):
+def on_inference(net, sta, conf, mag_est, logit_gap, now):
     ts  = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now))
     key = station_key(net, sta)
     sensor_state.update_station(key, conf, mag_est)
@@ -471,16 +487,22 @@ def on_inference(net, sta, conf, mag_est, now):
                 ts=ts, unix_ts=now,
                 stations=sorted(stations_fired),
                 conf=conf,
+                logit_gap=logit_gap,
                 epicenter=epicenter_latlon,
             )
             sensor_state.add_detection(det_rec)
 
             reset_arrivals()
 
-            # Launch deferred mb computation in background
+            # Launch deferred mb + USGS lookups in background
             threading.Thread(
                 target=report_mb_deferred,
                 args=(set(stations_fired), p_arr_snapshot, epicenter_latlon, now),
+                daemon=True,
+            ).start()
+            threading.Thread(
+                target=report_usgs_deferred,
+                args=(now, dict(p_arr_snapshot)),
                 daemon=True,
             ).start()
 
@@ -500,6 +522,60 @@ def on_inference(net, sta, conf, mag_est, now):
             else:
                 print(f"[{ts}] {key}  conf={conf:.3f}  mag={fmt_mag(mag_est)}", flush=True)
             station_status[key] = now
+
+# ── USGS ComCat validation ─────────────────────────────────────────────────────
+def query_usgs_event(det_unix, p_arrivals):
+    """
+    Search USGS ComCat for earthquakes that could explain this detection.
+    Searches the window [earliest_P - 2400s, earliest_P - 30s] (up to 40 min before P).
+    Returns a dict with mag/place/time or None.
+    """
+    import urllib.request
+    min_arr = min(p_arrivals.values()) if p_arrivals else det_unix
+    t0 = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(min_arr - 2400))
+    t1 = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(min_arr - 30))
+    url = (
+        f'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson'
+        f'&starttime={t0}&endtime={t1}'
+        f'&minmagnitude={USGS_MIN_MAG}&orderby=magnitude-desc&limit=5'
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            data = json.loads(resp.read())
+        feats = data.get('features', [])
+        if not feats:
+            return None
+        f = feats[0]   # highest magnitude in window
+        coords = f['geometry']['coordinates']
+        p = f['properties']
+        return {
+            'mag':     p.get('mag'),
+            'magType': p.get('magType', '?'),
+            'place':   p.get('place', '?'),
+            'time':    p['time'] / 1000,
+            'lat':     coords[1],
+            'lon':     coords[0],
+            'depth':   coords[2],
+        }
+    except Exception:
+        return None
+
+
+def report_usgs_deferred(det_unix, p_arrivals):
+    """Thread: queries USGS ~10s after detection; logs result and updates state."""
+    time.sleep(10)
+    event = query_usgs_event(det_unix, p_arrivals)
+    ts = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+    if event:
+        ns  = 'N' if event['lat'] >= 0 else 'S'
+        ew  = 'E' if event['lon'] >= 0 else 'W'
+        print(f"  [usgs {ts}] M{event['mag']}{event['magType']} — {event['place']}", flush=True)
+        print(f"  [usgs {ts}] {abs(event['lat']):.2f}°{ns} {abs(event['lon']):.2f}°{ew}  "
+              f"depth={event['depth']:.0f}km", flush=True)
+        sensor_state.update_usgs(det_unix, event)
+    else:
+        print(f"  [usgs {ts}] no USGS match (M{USGS_MIN_MAG}+ in window)", flush=True)
+
 
 # ── Web UI ────────────────────────────────────────────────────────────────────
 _WEB_HTML = """<!DOCTYPE html>
@@ -609,12 +685,15 @@ function update(){
         const [la,lo]=det.epicenter;
         epi=`<span class="det-epi"> ${Math.abs(la).toFixed(1)}°${la>=0?'N':'S'} ${Math.abs(lo).toFixed(1)}°${lo>=0?'E':'W'}</span>`;
       }
-      const detTitle=`${det.ts}\nstations: ${det.stations.join(', ')}\nconf: ${det.conf.toFixed(4)}`
+      const detTitle=`${det.ts}\nstations: ${det.stations.join(', ')}\nconf: ${det.conf.toFixed(4)}  logit gap: ${(det.logit_gap||0).toFixed(1)}`
         +(det.epicenter?`\nepi: ${det.epicenter[0].toFixed(2)}°N ${det.epicenter[1].toFixed(2)}°E`:'')
-        +(det.mb!=null?`\nmb=${det.mb.toFixed(1)} (IASPEI body-wave)`:'');
+        +(det.mb!=null?`\nmb=${det.mb.toFixed(1)} (IASPEI body-wave)`:'\nmb pending...')
+        +(det.usgs?`\nUSGS: M${det.usgs.mag}${det.usgs.magType} — ${det.usgs.place}`:'\nUSGS lookup pending...');
+      let usgsStr='';
+      if(det.usgs){usgsStr=`<span style="color:#a371f7"> ·M${det.usgs.mag}${det.usgs.magType} ${det.usgs.place.split(',')[0]}</span>`}
       return `<div class="det" title="${detTitle}">
         <span class="det-time">${det.ts}</span><br>
-        <span class="det-sta">${det.stations.join(', ')}</span>  ${mb}${epi}
+        <span class="det-sta">${det.stations.join(', ')}</span>  ${mb}${epi}${usgsStr}
       </div>`;
     }).join('');
     // epicenter markers
@@ -775,8 +854,8 @@ def seedlink_loop(models):
                 list(ring[CHANNELS[2]])[-WIN_SAMPLES:],
             ], dtype=np.float32)
 
-            conf, mag_est = ensemble_predict(models, normalize_window(window))
-            on_inference(net, sta, conf, mag_est, time.time())
+            conf, mag_est, logit_gap = ensemble_predict(models, normalize_window(window))
+            on_inference(net, sta, conf, mag_est, logit_gap, time.time())
 
     print(f"\nConnecting to {SEEDLINK_SERVER}...", flush=True)
     backoff = 5
