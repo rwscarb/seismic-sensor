@@ -1795,7 +1795,8 @@ def start_web_server():
     # ── Slack slash command endpoint ───────────────────────────────────────────
     @app.route('/slack/command', methods=['POST'])
     def slack_command():
-        import hashlib, hmac
+        import hashlib
+        import hmac
         # Verify Slack request signature
         if SLACK_SIGNING_SECRET:
             ts  = request.headers.get('X-Slack-Request-Timestamp', '')
@@ -1803,7 +1804,7 @@ def start_web_server():
             body_bytes = request.get_data()
             base = f'v0:{ts}:{body_bytes.decode()}'.encode()
             expected = 'v0=' + hmac.new(
-                SLACK_SIGNING_SECRET.encode(), base, hashlib.sha256
+                SLACK_SIGNING_SECRET.encode(), base, hashlib.sha256,
             ).hexdigest()
             if not hmac.compare_digest(expected, sig):
                 return Response('invalid signature', status=403, mimetype='text/plain')
