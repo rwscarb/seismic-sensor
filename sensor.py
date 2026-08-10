@@ -16,6 +16,8 @@ import numpy as np
 import torch, torch.nn as nn, torch.nn.functional as F
 warnings.filterwarnings('ignore')
 
+SERVER_START_TIME = time.time()  # recorded once at process start; used as deploy boundary in UI
+
 # ── Config from env ────────────────────────────────────────────────────────────
 CHECKPOINT_DIR   = os.environ.get('CHECKPOINT_DIR', './checkpoints')
 SEEDLINK_SERVER  = os.environ.get('SEEDLINK_SERVER', 'geofon.gfz-potsdam.de:18000')
@@ -33,6 +35,7 @@ WEB_PORT         = int(os.environ.get('WEB_PORT', '8080'))
 TUI_MODE         = os.environ.get('TUI', '').lower() in ('1', 'true', 'yes')
 TEMP_SCALE       = float(os.environ.get('TEMP_SCALE', '1.0'))   # temperature for classifier calibration
 USGS_MIN_MAG     = float(os.environ.get('USGS_MIN_MAG', '4.0')) # min magnitude for USGS catalog lookup
+EMSC_MIN_MAG     = float(os.environ.get('EMSC_MIN_MAG', '2.0')) # min magnitude for EMSC fallback lookup
 DETECTIONS_PATH  = os.environ.get('DETECTIONS_PATH', '/tmp/detections.json')
 
 # Parse stations: "GE.APE,GE.MORC" → [('GE','APE'), ('GE','MORC')]
@@ -172,6 +175,7 @@ class SensorState:
                     for d in self.detections[-30:]
                 ],
                 'now': time.time(),
+                'server_start': SERVER_START_TIME,
             }
 
 sensor_state = SensorState()
@@ -632,20 +636,70 @@ def query_usgs_event(det_unix, p_arrivals):
         return None
 
 
+def query_emsc_event(det_unix, p_arrivals):
+    """
+    EMSC fallback: European-Mediterranean catalog, lower magnitude threshold.
+    Bounding box covers Europe + Mediterranean to reduce irrelevant global matches.
+    """
+    import urllib.request
+    min_arr = min(p_arrivals.values()) if p_arrivals else det_unix
+    t0 = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(min_arr - 2400))
+    t1 = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(min_arr - 30))
+    url = (
+        f'https://www.seismicportal.eu/fdsnws/event/1/query?format=json'
+        f'&starttime={t0}&endtime={t1}'
+        f'&minmagnitude={EMSC_MIN_MAG}&orderby=magnitude-desc&limit=5'
+        f'&minlatitude=25&maxlatitude=75&minlongitude=-30&maxlongitude=60'
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            data = json.loads(resp.read())
+        feats = data.get('features', [])
+        if not feats:
+            return None
+        f = feats[0]
+        coords = f['geometry']['coordinates']
+        p = f['properties']
+        return {
+            'mag':     p.get('mag') or p.get('magnitude'),
+            'magType': p.get('magtype') or p.get('magnitudetype', '?'),
+            'place':   p.get('flynn_region') or p.get('region', '?'),
+            'time':    p['time'] / 1000 if isinstance(p.get('time'), (int, float)) else 0,
+            'lat':     coords[1],
+            'lon':     coords[0],
+            'depth':   coords[2] if len(coords) > 2 else 0,
+            'source':  'emsc',
+        }
+    except Exception:
+        return None
+
+
 def report_usgs_deferred(det_unix, p_arrivals):
-    """Thread: queries USGS ~10s after detection; logs result and updates state."""
+    """Thread: queries USGS ~10s after detection, then EMSC if no match."""
     time.sleep(10)
     event = query_usgs_event(det_unix, p_arrivals)
     ts = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
     if event:
-        ns  = 'N' if event['lat'] >= 0 else 'S'
-        ew  = 'E' if event['lon'] >= 0 else 'W'
+        event['source'] = 'usgs'
+        ns = 'N' if event['lat'] >= 0 else 'S'
+        ew = 'E' if event['lon'] >= 0 else 'W'
         print(f"  [usgs {ts}] M{event['mag']}{event['magType']} — {event['place']}", flush=True)
         print(f"  [usgs {ts}] {abs(event['lat']):.2f}°{ns} {abs(event['lon']):.2f}°{ew}  "
               f"depth={event['depth']:.0f}km", flush=True)
         sensor_state.update_usgs(det_unix, event)
+        return
+    print(f"  [usgs {ts}] no USGS match (M{USGS_MIN_MAG}+ in window) — trying EMSC", flush=True)
+    event = query_emsc_event(det_unix, p_arrivals)
+    ts = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+    if event:
+        ns = 'N' if event['lat'] >= 0 else 'S'
+        ew = 'E' if event['lon'] >= 0 else 'W'
+        print(f"  [emsc {ts}] M{event['mag']}{event['magType']} — {event['place']}", flush=True)
+        print(f"  [emsc {ts}] {abs(event['lat']):.2f}°{ns} {abs(event['lon']):.2f}°{ew}  "
+              f"depth={event['depth']:.0f}km", flush=True)
+        sensor_state.update_usgs(det_unix, event)
     else:
-        print(f"  [usgs {ts}] no USGS match (M{USGS_MIN_MAG}+ in window)", flush=True)
+        print(f"  [emsc {ts}] no EMSC match (M{EMSC_MIN_MAG}+ European window)", flush=True)
         sensor_state.update_usgs(det_unix, None)
 
 
@@ -688,6 +742,8 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 .det-chips-inline{display:flex;gap:4px;flex:1;min-width:0}
 .det-usgs-icon{flex-shrink:0;font-size:13px;line-height:1;cursor:default}
 .det-age{color:#6e7681;font-size:10px;white-space:nowrap;flex-shrink:0;text-align:right;min-width:28px}
+.det-deploy-sep{display:flex;align-items:center;gap:6px;padding:5px 0;color:#d29922;font-size:10px;letter-spacing:.5px}
+.det-deploy-sep::before,.det-deploy-sep::after{content:'';flex:1;border-top:1px solid #2a1f00}
 .chip{font-size:10px;border-radius:3px;padding:1px 5px;font-weight:bold;white-space:nowrap}
 .chip-mb-low{color:#3fb950;background:#0d2a15}
 .chip-mb-mid{color:#d29922;background:#2a1f00}
@@ -695,9 +751,29 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 .chip-mb-approx{opacity:.8;font-style:italic}
 .chip-epi{color:#d29922;background:#2a1f00}
 .chip-usgs{color:#a371f7;background:#1e1129}
+.chip-emsc{color:#39c5cf;background:#0d1f21}
 #map{height:320px;border-radius:4px;margin-top:10px}
 .right-col{display:flex;flex-direction:column;gap:12px}
 .no-data{color:#6e7681;font-style:italic;font-size:11px}
+/* fullscreen map */
+#map-wrap{position:relative}
+#fs-btn{position:absolute;top:6px;right:6px;z-index:1000;background:#161b22cc;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:3px 7px;font-size:11px;cursor:pointer;backdrop-filter:blur(4px)}
+#fs-btn:hover{color:#e6edf3;border-color:#58a6ff}
+body.fs-mode .grid{display:flex}
+body.fs-mode .right-col{display:none}
+body.fs-mode #left-panel{position:fixed;inset:0;z-index:500;border-radius:0;padding:0;display:flex;flex-direction:column;border:none}
+body.fs-mode #left-panel>.panel-hdr,body.fs-mode #stations{display:none}
+body.fs-mode #map-wrap{flex:1;margin:0}
+body.fs-mode #map{height:100%!important;border-radius:0}
+body.fs-mode header{z-index:501;position:relative}
+/* fullscreen overlay */
+#fs-overlay{display:none;position:absolute;top:10px;left:10px;z-index:1001;background:#161b22cc;border:1px solid #30363d;border-radius:6px;padding:10px 14px;min-width:220px;max-width:280px;backdrop-filter:blur(6px);font-size:11px;pointer-events:none}
+body.fs-mode #fs-overlay{display:block}
+#fs-overlay h3{font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+.fso-sta{display:flex;justify-content:space-between;margin-bottom:4px;align-items:center}
+.fso-bar{height:3px;border-radius:2px;background:#21262d;margin-top:2px;margin-bottom:6px}
+.fso-bar-fill{height:100%;border-radius:2px}
+.fso-det{margin-top:8px;border-top:1px solid #21262d;padding-top:8px}
 </style>
 </head>
 <body>
@@ -709,10 +785,18 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
   <span id="last-update">connecting...</span>
 </header>
 <div class="grid">
-  <div class="panel">
+  <div class="panel" id="left-panel">
     <div class="panel-hdr"><h2>Stations</h2></div>
     <div id="stations"></div>
-    <div id="map"></div>
+    <div id="map-wrap">
+      <button id="fs-btn" title="Toggle fullscreen map">&#x26F6;</button>
+      <div id="map"></div>
+      <div id="fs-overlay">
+        <h3>Stations</h3>
+        <div id="fso-stations"></div>
+        <div id="fso-det" class="fso-det"></div>
+      </div>
+    </div>
   </div>
   <div class="right-col">
     <div class="panel" style="flex:1;overflow:auto">
@@ -726,8 +810,15 @@ const map = L.map('map', {zoomControl:false}).setView([45,10],2);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
   {attribution:'&copy; OSM &copy; CARTO',subdomains:'abcd',maxZoom:19}).addTo(map);
 const staMarkers={}, detMarkers=[];
+let lastFlyTs=null;
 function confColor(c){return c>=0.835?'#3fb950':c>=0.5?'#d29922':'#6e7681'}
 function fmtAge(ts){const s=Math.round(Date.now()/1000-ts);return s<60?s+'s':Math.round(s/60)+'m'}
+// fullscreen toggle
+document.getElementById('fs-btn').addEventListener('click',()=>{
+  document.body.classList.toggle('fs-mode');
+  setTimeout(()=>map.invalidateSize(),100);
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')document.body.classList.remove('fs-mode');});
 function update(){
   fetch('/api/state').then(r=>r.json()).then(d=>{
     document.getElementById('last-update').textContent='updated '+new Date().toLocaleTimeString();
@@ -773,7 +864,15 @@ function update(){
     if(!dets.length){dDiv.innerHTML='<div class="no-data">No detections yet</div>';return}
     const escAttr=s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
     const mbChipClass=mb=>mb>=7?'chip-mb-high':mb>=5?'chip-mb-mid':'chip-mb-low';
+    const serverStart=d.server_start||0;
+    const deployLabel=(()=>{const dt=new Date(serverStart*1000);const t=dt.toUTCString();return t.substring(t.indexOf(':')-2,t.indexOf(':')+6)+'Z';})();
+    let sepInserted=false;
     const newHtml=dets.slice(0,20).map(det=>{
+      let sep='';
+      if(!sepInserted && det.unix_ts < serverStart){
+        sepInserted=true;
+        sep=`<div class="det-deploy-sep" title="Process restarted / new version deployed at ${new Date(serverStart*1000).toUTCString()}">deployed ${deployLabel}</div>`;
+      }
       // time — show just HH:MM:SSZ to save width; full ts in tooltip
       const tPart=det.ts.length>=19?det.ts.substring(11,19)+'Z':det.ts;
       // mb chip (center)
@@ -796,19 +895,22 @@ function update(){
         const ns=la>=0?'N':'S', ew=lo>=0?'E':'W';
         epiChip=`<span class="chip chip-epi">${Math.abs(la).toFixed(1)}°${ns} ${Math.abs(lo).toFixed(1)}°${ew}</span>`;
       }
-      // USGS icon — right-aligned checkmark/cross
+      // catalog icon — right-aligned checkmark/cross
       let usgsIcon='';
       let usgsTitle='';
       if(det.usgs){
         const place=det.usgs.place||'';
         const mt=det.usgs.magType||'';
-        usgsTitle=`M${det.usgs.mag}${mt} — ${place}`;
-        usgsIcon=`<span class="det-usgs-icon" style="color:#a371f7" title="${escAttr(usgsTitle)}">&#10003;</span>`;
+        const src=det.usgs.source||'usgs';
+        const srcLabel=src==='emsc'?'EMSC':'USGS';
+        const iconColor=src==='emsc'?'#39c5cf':'#a371f7';
+        usgsTitle=`${srcLabel}: M${det.usgs.mag}${mt} — ${place}`;
+        usgsIcon=`<span class="det-usgs-icon" style="color:${iconColor}" title="${escAttr(usgsTitle)}">&#10003;</span>`;
       } else if(det.usgs_checked){
-        usgsTitle=`No M%(usgs_min_mag)s+ event in USGS catalog for this window`;
+        usgsTitle=`No match in USGS (M%(usgs_min_mag)s+) or EMSC (M%(emsc_min_mag)s+) for this window`;
         usgsIcon=`<span class="det-usgs-icon" style="color:#30363d" title="${escAttr(usgsTitle)}">&#10007;</span>`;
       } else {
-        usgsIcon=`<span class="det-usgs-icon" style="color:#6e7681" title="USGS lookup pending">&#8943;</span>`;
+        usgsIcon=`<span class="det-usgs-icon" style="color:#6e7681" title="Catalog lookup pending">&#8943;</span>`;
       }
       // full tooltip
       const place=det.usgs?(det.usgs.place||''):'';
@@ -817,8 +919,8 @@ function update(){
       const detTitle=`${det.ts}\n${det.stations.join(', ')}\nconf: ${det.conf.toFixed(4)}  gap: ${(det.logit_gap||0).toFixed(1)}`
         +(det.epicenter?`\nepi: ${det.epicenter[0].toFixed(2)}N ${det.epicenter[1].toFixed(2)}E`:'')
         +`\n${mbNote}`
-        +(det.usgs?`\nUSGS: M${det.usgs.mag}${magType} — ${place}`:det.usgs_checked?`\nUSGS: no M%(usgs_min_mag)s+ match`:`\nUSGS pending`);
-      return `<div class="det" title="${escAttr(detTitle)}">
+        +(det.usgs?(()=>{const src=(det.usgs.source||'usgs').toUpperCase();return `\n${src}: M${det.usgs.mag}${magType} — ${place}`;})():det.usgs_checked?`\nNo catalog match (USGS M%(usgs_min_mag)s+ / EMSC M%(emsc_min_mag)s+)`:`\nCatalog lookup pending`);
+      return sep+`<div class="det" title="${escAttr(detTitle)}">
         <span class="det-time">${tPart}</span>
         <span class="det-stas">${det.stations.join(' · ')}</span>
         <span class="det-chips-inline">${mbChip}${epiChip}</span>
@@ -840,6 +942,35 @@ function update(){
         .bindPopup(`${det.ts}<br>${det.stations.join(', ')}<br>${mbLabel}`).addTo(map);
       detMarkers.push(m);
     });
+    // flyTo newest epicenter when it first appears
+    const newestEpi=dets.find(det=>det.epicenter);
+    if(newestEpi && newestEpi.ts!==lastFlyTs){
+      lastFlyTs=newestEpi.ts;
+      const [la,lo]=newestEpi.epicenter;
+      map.flyTo([la,lo],5,{duration:1.5});
+    }
+    // fullscreen overlay: station list + latest detection
+    const fsoSta=document.getElementById('fso-stations');
+    const fsoDet=document.getElementById('fso-det');
+    if(fsoSta){
+      fsoSta.innerHTML=Object.entries(d.stations).sort((a,b)=>b[1].conf-a[1].conf).map(([k,s])=>{
+        const col=confColor(s.conf);
+        const pct=Math.round(s.conf*100);
+        return `<div class="fso-sta"><span style="color:#58a6ff">${k}</span><span style="color:${col}">${s.conf.toFixed(3)}</span></div>
+          <div class="fso-bar"><div class="fso-bar-fill" style="width:${pct}%;background:${col}"></div></div>`;
+      }).join('');
+    }
+    if(fsoDet&&dets.length){
+      const ld=dets[0];
+      const mbStr=ld.mb!=null?(ld.mb_local?'local':ld.mb_approx?`mb~${ld.mb.toFixed(1)}`:`mb=${ld.mb.toFixed(1)}`):'mb…';
+      const usgsStr=ld.usgs?(()=>{const src=(ld.usgs.source||'usgs').toUpperCase();return `${src}: M${ld.usgs.mag} ${(ld.usgs.place||'').split(',')[0]}`;})():ld.usgs_checked?'no catalog match':'catalog pending';
+      fsoDet.innerHTML=`<div style="color:#8b949e;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Latest Detection</div>
+        <div style="color:#e6edf3">${ld.ts.substring(11,19)}Z</div>
+        <div style="color:#58a6ff;margin:2px 0">${ld.stations.join(' · ')}</div>
+        <div style="color:#d29922">${mbStr}</div>
+        ${ld.epicenter?`<div style="color:#d29922">${ld.epicenter[0].toFixed(2)}N ${ld.epicenter[1].toFixed(2)}E</div>`:''}
+        <div style="color:#a371f7;margin-top:2px">${usgsStr}</div>`;
+    }
   }).catch(()=>{document.getElementById('status-dot').style.background='#f85149'});
 }
 update();setInterval(update,3000);
@@ -868,6 +999,7 @@ def start_web_server():
         .replace('%(seedlink)s',            SEEDLINK_SERVER)
         .replace('%(threshold)s',           str(THRESHOLD))
         .replace('%(usgs_min_mag)s',        str(USGS_MIN_MAG))
+        .replace('%(emsc_min_mag)s',        str(EMSC_MIN_MAG))
     )
 
     app = Flask(__name__)

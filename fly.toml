@@ -18,6 +18,7 @@ primary_region = 'fra'
   CHECKPOINT_DIR   = '/checkpoints'
   DETECTIONS_PATH  = '/data/detections.json'
   USGS_MIN_MAG     = '3.0'
+  EMSC_MIN_MAG     = '2.0'
 
 [http_service]
   internal_port        = 8080
