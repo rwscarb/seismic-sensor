@@ -20,6 +20,9 @@ restart:
 
 # Fly.io
 deploy:
+	fly deploy
+
+deploy-clean:
 	fly deploy --no-cache
 
 fly-logs:

@@ -7,9 +7,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgeos-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install PyTorch CPU-only (separate index from PyPI packages)
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir obspy numpy scipy flask rich
+# Install PyTorch CPU-only first (separate index), then remaining deps — one cached layer
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+ && pip install --no-cache-dir obspy numpy scipy flask rich
 
 COPY sensor.py .
 

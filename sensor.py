@@ -837,12 +837,13 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 #fs-btn{position:absolute;top:6px;right:6px;z-index:1000;background:#161b22cc;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:3px 7px;font-size:11px;cursor:pointer;backdrop-filter:blur(4px)}
 #fs-btn:hover{color:#e6edf3;border-color:#58a6ff}
 body.fs-mode .grid{display:flex}
-body.fs-mode .right-col{display:none}
+body.fs-mode .right-col{position:fixed!important;top:50px;right:10px;bottom:10px;width:330px;z-index:1001;background:#161b22ee;backdrop-filter:blur(8px);border:1px solid #30363d;border-radius:8px;overflow:hidden;display:flex!important;flex-direction:column}
+body.fs-mode .right-col>.panel{border:none;border-radius:0;background:transparent;flex:1;overflow:auto}
 body.fs-mode #left-panel{position:fixed;inset:0;z-index:500;border-radius:0;padding:0;display:flex;flex-direction:column;border:none}
 body.fs-mode #left-panel>.panel-hdr,body.fs-mode #stations{display:none}
 body.fs-mode #map-wrap{flex:1;margin:0}
 body.fs-mode #map{height:100%!important;border-radius:0}
-body.fs-mode header{z-index:501;position:relative}
+body.fs-mode header{z-index:502;position:relative}
 /* fullscreen overlay */
 #fs-overlay{display:none;position:fixed;top:55px;left:10px;z-index:1001;background:#161b22cc;border:1px solid #30363d;border-radius:6px;padding:10px 14px;min-width:220px;max-width:280px;backdrop-filter:blur(6px);font-size:11px;pointer-events:none}
 body.fs-mode #fs-overlay{display:block}
@@ -861,6 +862,23 @@ body.fs-mode #fs-overlay{display:block}
   <span id="last-event-summary"></span>
   <span id="last-update">connecting...</span>
   <button id="mute-btn" title="Toggle audio alerts" style="background:#161b22;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;margin-left:4px">&#128266; on</button>
+  <select id="tz-sel" title="Display timezone" style="background:#161b22;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:2px 5px;font-size:11px;cursor:pointer;margin-left:6px">
+    <option value="auto">Auto TZ</option>
+    <option value="UTC">UTC</option>
+    <option value="America/Los_Angeles">Pacific</option>
+    <option value="America/Denver">Mountain</option>
+    <option value="America/Chicago">Central</option>
+    <option value="America/New_York">Eastern</option>
+    <option value="Europe/London">London</option>
+    <option value="Europe/Paris">Paris/Berlin</option>
+    <option value="Europe/Helsinki">Helsinki/Athens</option>
+    <option value="Europe/Moscow">Moscow</option>
+    <option value="Asia/Dubai">Dubai</option>
+    <option value="Asia/Kolkata">India</option>
+    <option value="Asia/Bangkok">Bangkok</option>
+    <option value="Asia/Tokyo">Tokyo</option>
+    <option value="Australia/Sydney">Sydney</option>
+  </select>
 </header>
 <div class="grid">
   <div class="panel" id="left-panel">
@@ -891,15 +909,30 @@ const staMarkers={}, detMarkers=[];
 let lastFlyTs=null;
 function confColor(c){return c>=0.835?'#3fb950':c>=0.5?'#d29922':'#6e7681'}
 function fmtAge(ts){const s=Math.round(Date.now()/1000-ts);return s<60?s+'s':s<3600?Math.round(s/60)+'m':Math.round(s/3600)+'h'}
-const _tzAbbr=(()=>{try{return new Intl.DateTimeFormat('en',{timeZoneName:'short'}).formatToParts(new Date()).find(p=>p.type==='timeZoneName').value;}catch(e){return '';}})();
+const _browserTz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+let _userTz=localStorage.getItem('tz')||'auto';
+function _activeTz(){return _userTz==='auto'?_browserTz:_userTz;}
+function _tzAbbr(){
+  try{return new Intl.DateTimeFormat('en',{timeZone:_activeTz(),timeZoneName:'short'}).formatToParts(new Date()).find(p=>p.type==='timeZoneName').value;}
+  catch(e){return _activeTz();}
+}
 function fmtLocal(isoStr){
   const d=new Date(isoStr);
-  const now=new Date();
-  const timeStr=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
-  const sameDay=d.toDateString()===now.toDateString();
-  const prefix=sameDay?'':d.toLocaleDateString([],{month:'short',day:'numeric'})+' ';
-  return `${prefix}${timeStr} ${_tzAbbr}`;
+  const tz=_activeTz();
+  const timeStr=d.toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZone:tz});
+  const today=new Date().toLocaleDateString('en',{timeZone:tz});
+  const detDay=d.toLocaleDateString('en',{timeZone:tz});
+  const prefix=today===detDay?'':d.toLocaleDateString('en',{timeZone:tz,month:'short',day:'numeric'})+' ';
+  return `${prefix}${timeStr} ${_tzAbbr()}`;
 }
+// Timezone selector
+(()=>{
+  const sel=document.getElementById('tz-sel');
+  if(!sel)return;
+  sel.value=_userTz;
+  if(!sel.value)sel.value='auto';
+  sel.addEventListener('change',()=>{_userTz=sel.value;localStorage.setItem('tz',_userTz);});
+})();
 // fullscreen toggle
 document.getElementById('fs-btn').addEventListener('click',()=>{
   document.body.classList.toggle('fs-mode');
@@ -1005,7 +1038,7 @@ function update(){
     const escAttr=s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
     const mbChipClass=mb=>mb>=5?'chip-mb-high':mb>=4?'chip-mb-mid':'chip-mb-low';
     const serverStart=d.server_start||0;
-    const deployLabel=(()=>{const dt=new Date(serverStart*1000);return dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false})+' '+_tzAbbr;})();
+    const deployLabel=(()=>{const dt=new Date(serverStart*1000);return dt.toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:_activeTz()})+' '+_tzAbbr();})();
     let sepInserted=false;
     const newHtml=dets.slice(0,100).map(det=>{
       let sep='';
