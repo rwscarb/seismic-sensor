@@ -796,6 +796,7 @@ _WEB_HTML = """<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Seismic Sensor — %(app_title)s</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230d1117'/%3E%3Cpolyline points='1,16 5,16 7,10 9,22 11,8 13,24 15,13 17,19 19,16 23,16 25,11 27,16 31,16' fill='none' stroke='%23f85149' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
@@ -929,6 +930,7 @@ const map = L.map('map', {zoomControl:false}).setView([45,10],2);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
   {attribution:'&copy; OSM &copy; CARTO',subdomains:'abcd',maxZoom:19}).addTo(map);
 const staMarkers={}, detMarkers=[];
+let sCoords=%(station_coords_json)s;
 let lastFlyTs=null, selectedDetTs=null, _pulseIv=null, _pulsePhase=0;
 let filterConfirmed=false, detDisplayLimit=20;
 // fault overlay — lazy loaded from GEM Global Active Faults dataset
@@ -999,16 +1001,29 @@ function fmtLocal(isoStr){
   if(!sel.value)sel.value='auto';
   sel.addEventListener('change',()=>{_userTz=sel.value;localStorage.setItem('tz',_userTz);});
 })();
-// fullscreen toggle
+// fullscreen toggle — uses browser Fullscreen API (hides browser chrome like F11)
 const _fsBtn=document.getElementById('fs-btn');
-function _setFsMode(on){
+function _applyFsMode(on){
   document.body.classList.toggle('fs-mode',on);
   _fsBtn.textContent=on?'✕':'⛶';
-  _fsBtn.title=on?'Exit fullscreen':'Toggle fullscreen map';
-  setTimeout(()=>map.invalidateSize(),100);
+  _fsBtn.title=on?'Exit fullscreen':'Toggle fullscreen';
+  setTimeout(()=>map.invalidateSize(),150);
 }
-_fsBtn.addEventListener('click',()=>_setFsMode(!document.body.classList.contains('fs-mode')));
-document.addEventListener('keydown',e=>{if(e.key==='Escape')_setFsMode(false);});
+_fsBtn.addEventListener('click',()=>{
+  if(!document.fullscreenElement){
+    document.documentElement.requestFullscreen().catch(()=>{
+      // Fallback: browser denied fullscreen (e.g. iframe sandbox) — use CSS-only mode
+      _applyFsMode(true);
+    });
+  } else {
+    document.exitFullscreen();
+  }
+});
+document.addEventListener('fullscreenchange',()=>{
+  _applyFsMode(!!document.fullscreenElement);
+});
+// Esc is handled by the browser when in native fullscreen; cover the CSS-only fallback case
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!document.fullscreenElement)_applyFsMode(false);});
 function applyMarkerSelection(){
   if(_pulseIv){clearInterval(_pulseIv);_pulseIv=null;}
   detMarkers.forEach(({m,ts,r})=>{
@@ -1087,9 +1102,9 @@ function showDesktopNotification(det){
 function update(){
   fetch('/api/state').then(r=>r.json()).then(d=>{
     document.getElementById('last-update').textContent='updated '+new Date().toLocaleTimeString();
+    if(d.station_coords)Object.assign(sCoords,d.station_coords);
     // stations
     const sDiv=document.getElementById('stations');
-    const sCoords=%(station_coords_json)s;
     let sHtml='';
     Object.entries(d.stations).sort((a,b)=>b[1].conf-a[1].conf).forEach(([k,s])=>{
       const pct=Math.round(s.conf*100);
@@ -1110,7 +1125,8 @@ function update(){
       }
       if(staMarkers[k]){
         const mc=confColor(s.conf);
-        staMarkers[k].setStyle({color:mc,fillColor:mc,fillOpacity:.9});
+        if(staMarkers[k].options.fillColor!==mc)
+          staMarkers[k].setStyle({color:mc,fillColor:mc,fillOpacity:.9});
         staMarkers[k].setTooltipContent(`<b>${k}</b><br>${coord}<br>conf: ${s.conf.toFixed(3)}`);
       }
     });
@@ -1341,7 +1357,9 @@ def start_web_server():
         ip = request.headers.get('Fly-Client-IP') or request.remote_addr or 'unknown'
         if not _check_rate(ip):
             return Response('rate limited', status=429, mimetype='text/plain')
-        return jsonify(sensor_state.to_dict())
+        data = sensor_state.to_dict()
+        data['station_coords'] = {k: list(v) for k, v in station_coords.items()}
+        return jsonify(data)
 
     @app.route('/api/epcalc', methods=['POST'])
     def epcalc():
