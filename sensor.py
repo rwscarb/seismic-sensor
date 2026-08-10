@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """
-Live Seismic Detection Sensor — multi-station consensus, inference-only, Docker-ready.
+Live Seismic Detection Sensor — multi-station consensus + TDOA epicenter localization.
 
 Loads pre-trained StreamingNet ensemble from /checkpoints/,
 connects to a SeedLink server, runs inference on each station independently,
-and alerts only when N_CONSENSUS stations agree within CONSENSUS_WINDOW seconds.
+fires alert when N_CONSENSUS stations agree within CONSENSUS_WINDOW seconds,
+and estimates the epicenter via TDOA least-squares when 3+ stations have arrivals.
 
 All config via environment variables (see .env / fly.toml).
 
-STATIONS format: "GE.APE,GE.MORC"  (NET.STA pairs, comma-separated)
+STATIONS format: "GE.APE,GE.MORC,GE.BORG,GE.KBS"  (NET.STA pairs, comma-separated)
 """
-import os, time, collections, warnings
+import os, time, math, collections, warnings
 import numpy as np
 import torch, torch.nn as nn, torch.nn.functional as F
 warnings.filterwarnings('ignore')
@@ -18,13 +19,16 @@ warnings.filterwarnings('ignore')
 # ── Config from env ────────────────────────────────────────────────────────────
 CHECKPOINT_DIR   = os.environ.get('CHECKPOINT_DIR', './checkpoints')
 SEEDLINK_SERVER  = os.environ.get('SEEDLINK_SERVER', 'geofon.gfz-potsdam.de:18000')
-STATIONS_RAW     = os.environ.get('STATIONS', 'GE.APE')   # NET.STA,NET.STA,...
+STATIONS_RAW     = os.environ.get('STATIONS', 'GE.APE,GE.MORC,GE.BORG,GE.KBS')
 CHANNELS         = os.environ.get('CHANNELS', 'HHZ,HHN,HHE').split(',')
 THRESHOLD        = float(os.environ.get('THRESHOLD', '0.835'))
 N_SEEDS          = int(os.environ.get('N_SEEDS', '3'))
 ALERT_COOLDOWN   = float(os.environ.get('ALERT_COOLDOWN', '60.0'))
-N_CONSENSUS      = int(os.environ.get('N_CONSENSUS', '1'))   # stations required
-CONSENSUS_WINDOW = float(os.environ.get('CONSENSUS_WINDOW', '120.0'))  # seconds
+N_CONSENSUS      = int(os.environ.get('N_CONSENSUS', '2'))
+CONSENSUS_WINDOW = float(os.environ.get('CONSENSUS_WINDOW', '120.0'))
+P_VEL_KM_S      = float(os.environ.get('P_VEL_KM_S', '8.0'))   # teleseismic P-wave speed
+LOC_MIN_STA      = int(os.environ.get('LOC_MIN_STA', '3'))       # stations needed for location
+P_LEAD_S         = float(os.environ.get('P_LEAD_S', '0.4'))      # model's pre-P horizon
 
 # Parse stations: "GE.APE,GE.MORC" → [('GE','APE'), ('GE','MORC')]
 STATIONS = []
@@ -44,6 +48,47 @@ STRIDE        = 10
 TARGET_SRATE  = 100.0
 BUF_DECAY     = 0.876
 BUF_STRENGTH  = 1.429
+
+# ── Known station coordinates (lat, lon) — fallback if FDSN fetch fails ───────
+KNOWN_COORDS = {
+    'GE.APE':  (67.597,  33.401),   # Apatity, Russia
+    'GE.MORC': (49.781,  16.978),   # Morava, Czech Republic
+    'GE.BORG': (64.747, -21.328),   # Borgarfjordur, Iceland
+    'GE.KBS':  (78.926,  11.943),   # Ny-Ålesund, Svalbard
+    'GE.WLF':  (49.664,   6.153),   # Walferdange, Luxembourg
+    'GE.STU':  (48.771,   9.194),   # Stuttgart, Germany
+    'GE.MAHO': (39.932,   4.267),   # Mahon, Menorca, Spain
+    'GE.MTE':  (38.528,  -7.538),   # Mértola, Portugal
+    'GE.MATE': (40.649,  16.704),   # Matera, Italy
+}
+
+station_coords = {}   # populated at startup
+
+def fetch_station_coords():
+    """Try FDSN for precise coordinates; fall back to KNOWN_COORDS."""
+    global station_coords
+    try:
+        from obspy.clients.fdsn import Client
+        client = Client("GEOFON")
+        for net, sta in STATIONS:
+            key = f"{net}.{sta}"
+            try:
+                inv = client.get_stations(network=net, station=sta, level="station")
+                st = inv[0][0]
+                station_coords[key] = (st.latitude, st.longitude)
+                print(f"  coords {key}: {st.latitude:.3f}°N {st.longitude:.3f}°E (FDSN)", flush=True)
+            except Exception:
+                if key in KNOWN_COORDS:
+                    station_coords[key] = KNOWN_COORDS[key]
+                    lat, lon = KNOWN_COORDS[key]
+                    print(f"  coords {key}: {lat:.3f}°N {lon:.3f}°E (hardcoded)", flush=True)
+                else:
+                    print(f"  coords {key}: unknown — will skip in localization", flush=True)
+    except Exception:
+        for net, sta in STATIONS:
+            key = f"{net}.{sta}"
+            if key in KNOWN_COORDS:
+                station_coords[key] = KNOWN_COORDS[key]
 
 # ── Model ─────────────────────────────────────────────────────────────────────
 class ConvBlock(nn.Module):
@@ -102,16 +147,66 @@ def normalize_window(w):
         w[i] /= w[i].std() + 1e-6
     return w
 
+# ── TDOA epicenter localization ────────────────────────────────────────────────
+def haversine_km(lat1, lon1, lat2, lon2):
+    R = 6371.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi  = math.radians(lat2 - lat1)
+    dlam  = math.radians(lon2 - lon1)
+    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlam/2)**2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+def locate_epicenter(arrivals):
+    """
+    arrivals: list of (station_key, p_arrival_unix)
+              p_arrival_unix = detection_time + P_LEAD_S (corrected for model horizon)
+    Returns (lat, lon, origin_time_unix, rms_s) or None.
+    Requires scipy.
+    """
+    from scipy.optimize import minimize
+
+    # Filter to stations with known coordinates
+    obs = [(key, t) for key, t in arrivals if key in station_coords]
+    if len(obs) < LOC_MIN_STA:
+        return None
+
+    sta_lat  = np.array([station_coords[k][0] for k, _ in obs])
+    sta_lon  = np.array([station_coords[k][1] for k, _ in obs])
+    arr_time = np.array([t for _, t in obs])
+
+    def cost(params):
+        lat0, lon0, t0 = params
+        dists = np.array([haversine_km(lat0, lon0, sta_lat[i], sta_lon[i])
+                          for i in range(len(obs))])
+        pred  = t0 + dists / P_VEL_KM_S
+        return float(np.sum((pred - arr_time)**2))
+
+    # Initial guess: station centroid, rough origin time
+    lat0 = float(np.mean(sta_lat))
+    lon0 = float(np.mean(sta_lon))
+    t0   = float(np.min(arr_time)) - 1200.0  # assume 20-min travel for teleseismic
+
+    res = minimize(cost, [lat0, lon0, t0], method='Nelder-Mead',
+                   options={'xatol': 0.05, 'fatol': 0.1, 'maxiter': 50000})
+
+    lat_e, lon_e, t0_e = res.x
+    n = len(obs)
+    rms = math.sqrt(res.fun / n)
+
+    # Clamp to valid range
+    lat_e = max(-90.0, min(90.0, lat_e))
+    lon_e = ((lon_e + 180) % 360) - 180
+
+    return lat_e, lon_e, t0_e, rms
+
 # ── Multi-station consensus state ─────────────────────────────────────────────
-# station_key → deque of ring buffers per channel
-station_rings   = {}   # key → {ch: deque}
-station_strides = {}   # key → int (stride counter)
-station_status  = {}   # key → float (last status print time)
+station_rings      = {}   # key → {ch: deque}
+station_strides    = {}   # key → int
+station_status     = {}   # key → float (last status print time)
+station_first_arr  = {}   # key → float or None (first P-arrival timestamp, corrected)
 
-# Recent detections for consensus: deque of (timestamp, station_key, conf, mag)
-recent_detections = collections.deque()
-
-last_alert = [0.0]
+recent_detections  = collections.deque()
+last_alert         = [0.0]
 
 def station_key(net, sta):
     return f"{net}.{sta}"
@@ -119,31 +214,39 @@ def station_key(net, sta):
 def init_station_state():
     for net, sta in STATIONS:
         k = station_key(net, sta)
-        station_rings[k]   = {ch: collections.deque(maxlen=500) for ch in CHANNELS}
-        station_strides[k] = 0
-        station_status[k]  = 0.0
+        station_rings[k]     = {ch: collections.deque(maxlen=500) for ch in CHANNELS}
+        station_strides[k]   = 0
+        station_status[k]    = 0.0
+        station_first_arr[k] = None
+
+def reset_arrivals():
+    for k in station_first_arr:
+        station_first_arr[k] = None
 
 def check_consensus(now):
-    """Return True if N_CONSENSUS distinct stations fired within CONSENSUS_WINDOW."""
     cutoff = now - CONSENSUS_WINDOW
-    recent_detections_pruned = [d for d in recent_detections if d[0] >= cutoff]
+    pruned = [d for d in recent_detections if d[0] >= cutoff]
     recent_detections.clear()
-    recent_detections.extend(recent_detections_pruned)
+    recent_detections.extend(pruned)
     stations_fired = set(d[1] for d in recent_detections)
     return len(stations_fired) >= N_CONSENSUS, stations_fired
 
 def on_inference(net, sta, conf, mag_est, now):
-    """Called after each inference step for a station."""
-    ts = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now))
+    ts  = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now))
     key = station_key(net, sta)
 
     if conf >= THRESHOLD:
+        # Record first P-wave arrival (corrected for model pre-P horizon)
+        if station_first_arr[key] is None:
+            station_first_arr[key] = now + P_LEAD_S
+
         recent_detections.append((now, key, conf, mag_est))
         consensus_met, stations_fired = check_consensus(now)
 
         if consensus_met and now - last_alert[0] > ALERT_COOLDOWN:
             last_alert[0] = now
-            recent_detections.clear()  # reset so coda windows don't re-trigger
+            recent_detections.clear()
+
             mag_display = max(-2.0, min(9.9, mag_est))
             station_list = ', '.join(sorted(stations_fired))
             print(f"\n{'='*60}", flush=True)
@@ -151,12 +254,41 @@ def on_inference(net, sta, conf, mag_est, now):
             print(f"  Stations:   {station_list}  ({len(stations_fired)}/{N_CONSENSUS} consensus)", flush=True)
             print(f"  Confidence: {conf:.4f}  (threshold={THRESHOLD})", flush=True)
             print(f"  Mag est:    M{mag_display:.1f}  (uncalibrated)", flush=True)
-            print(f"  Lead time:  +0.4s before P-arrival", flush=True)
+            print(f"  Lead time:  +{P_LEAD_S}s before P-arrival", flush=True)
+
+            # Attempt epicenter localization
+            arrivals = [(k, t) for k, t in station_first_arr.items() if t is not None]
+            if len(arrivals) >= LOC_MIN_STA:
+                try:
+                    loc = locate_epicenter(arrivals)
+                    if loc:
+                        lat_e, lon_e, t0_e, rms = loc
+                        origin_ts = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(t0_e))
+                        ns = 'N' if lat_e >= 0 else 'S'
+                        ew = 'E' if lon_e >= 0 else 'W'
+                        sta_used = [k for k, _ in arrivals if k in station_coords]
+                        print(f"  Epicenter:  {abs(lat_e):.2f}°{ns} {abs(lon_e):.2f}°{ew}  "
+                              f"(rms={rms:.1f}s, {len(sta_used)} stations)", flush=True)
+                        print(f"  Origin:     {origin_ts}  (est.)", flush=True)
+                    else:
+                        n_known = sum(1 for k, _ in arrivals if k in station_coords)
+                        print(f"  Epicenter:  need {LOC_MIN_STA} stations w/ coords "
+                              f"(have {n_known})", flush=True)
+                except Exception as e:
+                    print(f"  Epicenter:  localization failed ({e})", flush=True)
+            else:
+                n_have = len(arrivals)
+                print(f"  Epicenter:  need {LOC_MIN_STA}+ stations "
+                      f"(have {n_have} P-arrival(s))", flush=True)
+
             print(f"{'='*60}\n", flush=True)
+            reset_arrivals()
+
         elif not consensus_met:
             mag_display = max(-2.0, min(9.9, mag_est))
+            n_waiting   = N_CONSENSUS - len(stations_fired)
             print(f"  [{ts}] {key} CANDIDATE conf={conf:.3f} mag=M{mag_display:.1f} "
-                  f"(waiting for {N_CONSENSUS - len(stations_fired)} more station(s))", flush=True)
+                  f"(waiting for {n_waiting} more station(s))", flush=True)
     else:
         if now - station_status[key] > 10.0:
             mag_display = max(-2.0, min(9.9, mag_est))
@@ -206,12 +338,16 @@ def run_sensor(models):
             conf, mag_est = ensemble_predict(models, normalize_window(window))
             on_inference(net, sta, conf, mag_est, time.time())
 
+    print(f"\nFetching station coordinates...", flush=True)
+    fetch_station_coords()
+
     print(f"\nConnecting to {SEEDLINK_SERVER}...", flush=True)
     station_list = ', '.join(f"{n}.{s}" for n, s in STATIONS)
     print(f"  Stations:  {station_list}", flush=True)
     print(f"  Channels:  {CHANNELS}", flush=True)
     print(f"  Threshold: {THRESHOLD}  |  Consensus: {N_CONSENSUS}/{len(STATIONS)} in {CONSENSUS_WINDOW:.0f}s", flush=True)
-    print(f"  Cooldown:  {ALERT_COOLDOWN}s", flush=True)
+    print(f"  Cooldown:  {ALERT_COOLDOWN}s  |  P-vel: {P_VEL_KM_S} km/s", flush=True)
+    print(f"  Localize:  {LOC_MIN_STA}+ stations required", flush=True)
     print("Ready. Ctrl+C to stop.\n", flush=True)
 
     backoff = 5
@@ -234,8 +370,8 @@ def run_sensor(models):
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
-    print(f"Seismic Detection Sensor (multi-station consensus)", flush=True)
-    print(f"  model:   StreamingNet {N_SEEDS}-seed ensemble (H-0.4s, mean-conf)", flush=True)
+    print(f"Seismic Detection Sensor (multi-station consensus + TDOA localization)", flush=True)
+    print(f"  model:   StreamingNet {N_SEEDS}-seed ensemble (H-{P_LEAD_S}s, mean-conf)", flush=True)
     print(f"  device:  {DEVICE}", flush=True)
     print(f"\nLoading checkpoints from {CHECKPOINT_DIR}...", flush=True)
     models = load_ensemble()
