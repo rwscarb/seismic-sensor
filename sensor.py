@@ -814,6 +814,7 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 .conf-fill{height:100%;border-radius:2px;transition:width .5s}
 .det{display:flex;align-items:center;gap:4px;padding:5px 0;border-bottom:1px solid #21262d;font-size:11px;min-height:26px;min-width:0;overflow:hidden}
 .det:last-child{border-bottom:none}
+.det-selected{background:#0d2a15!important;border-left:2px solid #3fb950;padding-left:5px}
 .det-time{color:#8b949e;font-size:10px;white-space:nowrap;flex-shrink:0;font-variant-numeric:tabular-nums}
 .det-stas{color:#58a6ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
 .det-chips-inline{display:flex;gap:3px;flex-shrink:0}
@@ -906,7 +907,7 @@ const map = L.map('map', {zoomControl:false}).setView([45,10],2);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
   {attribution:'&copy; OSM &copy; CARTO',subdomains:'abcd',maxZoom:19}).addTo(map);
 const staMarkers={}, detMarkers=[];
-let lastFlyTs=null;
+let lastFlyTs=null, selectedDetTs=null;
 function confColor(c){return c>=0.835?'#3fb950':c>=0.5?'#d29922':'#6e7681'}
 function fmtAge(ts){const s=Math.round(Date.now()/1000-ts);return s<60?s+'s':s<3600?Math.round(s/60)+'m':Math.round(s/3600)+'h'}
 const _browserTz=Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -939,7 +940,7 @@ document.getElementById('fs-btn').addEventListener('click',()=>{
   setTimeout(()=>map.invalidateSize(),100);
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape')document.body.classList.remove('fs-mode');});
-function flyToEpi(lat,lon){map.flyTo([lat,lon],6,{duration:1.2});}
+function flyToEpi(lat,lon,ts){map.flyTo([lat,lon],6,{duration:1.2});selectedDetTs=ts||null;}
 // audio alert
 let audioEnabled=true;
 let lastDetTs=null;
@@ -1069,7 +1070,7 @@ function update(){
         } else {
           const [la,lo]=det.epicenter;
           const ns=la>=0?'N':'S', ew=lo>=0?'E':'W';
-          epiChip=`<button class="chip chip-epi" onclick="flyToEpi(${la},${lo})" title="Fly map to epicenter" style="cursor:pointer;border:none;font-family:inherit">&#x1F4CD; ${Math.abs(la).toFixed(1)}°${ns} ${Math.abs(lo).toFixed(1)}°${ew}</button>`;
+          epiChip=`<button class="chip chip-epi" onclick="flyToEpi(${la},${lo},${JSON.stringify(det.ts)})" title="Fly map to epicenter" style="cursor:pointer;border:none;font-family:inherit">&#x1F4CD; ${Math.abs(la).toFixed(1)}°${ns} ${Math.abs(lo).toFixed(1)}°${ew}</button>`;
         }
       }
       // catalog icon — right-aligned checkmark/cross
@@ -1104,7 +1105,8 @@ function update(){
         +(det.epicenter?`\nepi: ${det.epicenter[0].toFixed(2)}N ${det.epicenter[1].toFixed(2)}E`:'')
         +`\n${mbNote}`
         +(det.usgs?(()=>{const src=(det.usgs.source||'usgs').toUpperCase();return `\n${src}: M${det.usgs.mag}${magType} — ${place}`;})():det.usgs_checked?`\nNo catalog match (USGS M%(usgs_min_mag)s+ / EMSC M%(emsc_min_mag)s+)`:`\nCatalog lookup pending`);
-      return sep+`<div class="det" title="${escAttr(detTitle)}">
+      const selCls=det.ts===selectedDetTs?' det-selected':'';
+      return sep+`<div class="det${selCls}" title="${escAttr(detTitle)}">
         <span class="det-time">${tPart}</span>
         <span class="det-stas">${det.stations.join(' · ')}</span>
         <span class="det-chips-inline">${mbChip}${epiChip}</span>
