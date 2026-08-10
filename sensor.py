@@ -141,7 +141,7 @@ class SensorState:
     def add_detection(self, det):
         with self._lock:
             self.detections.append(det)
-            if len(self.detections) > 100:
+            if len(self.detections) > 500:
                 self.detections.pop(0)
             snap = list(self.detections)
         _save_detections(snap)
@@ -192,6 +192,7 @@ KNOWN_COORDS = {
     'GE.MAHO': (39.932,   4.267),   # Mahon, Menorca, Spain
     'GE.MTE':  (38.528,  -7.538),   # Mértola, Portugal
     'GE.MATE': (40.649,  16.704),   # Matera, Italy
+    'GE.KARP': (35.784,  27.154),   # Karpathos, Greece
 }
 
 station_coords    = {}   # populated at startup
@@ -777,7 +778,7 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 .det-time{color:#8b949e;font-size:10px;white-space:nowrap;flex-shrink:0;font-variant-numeric:tabular-nums}
 .det-stas{color:#58a6ff;white-space:nowrap;flex-shrink:0}
 .det-chips-inline{display:flex;gap:4px;flex:1;min-width:0}
-.det-usgs-icon{flex-shrink:0;font-size:13px;line-height:1;cursor:default}
+.det-usgs-icon{flex-shrink:0;font-size:13px;line-height:1;cursor:default}.det-usgs-icon[href]{cursor:pointer}
 .det-age{color:#6e7681;font-size:10px;white-space:nowrap;flex-shrink:0;text-align:right;min-width:28px}
 .det-deploy-sep{display:flex;align-items:center;gap:6px;padding:5px 0;color:#d29922;font-size:10px;letter-spacing:.5px}
 .det-deploy-sep::before,.det-deploy-sep::after{content:'';flex:1;border-top:1px solid #2a1f00}
@@ -963,11 +964,11 @@ function update(){
     }
     if(!dets.length){dDiv.innerHTML='<div class="no-data">No detections yet</div>';return}
     const escAttr=s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
-    const mbChipClass=mb=>mb>=7?'chip-mb-high':mb>=5?'chip-mb-mid':'chip-mb-low';
+    const mbChipClass=mb=>mb>=5?'chip-mb-high':mb>=4?'chip-mb-mid':'chip-mb-low';
     const serverStart=d.server_start||0;
     const deployLabel=(()=>{const dt=new Date(serverStart*1000);return dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false})+' '+_tzAbbr;})();
     let sepInserted=false;
-    const newHtml=dets.slice(0,20).map(det=>{
+    const newHtml=dets.slice(0,100).map(det=>{
       let sep='';
       if(!sepInserted && det.unix_ts < serverStart){
         sepInserted=true;
@@ -1042,8 +1043,8 @@ function update(){
     d.detections.forEach(det=>{
       if(!det.epicenter)return;
       const [la,lo]=det.epicenter;
-      const mb=det.mb||5;
-      const r=Math.max(4,Math.min(14,mb*2));
+      const mb=det.mb||4;
+      const r=Math.max(4,Math.min(14,(mb-2)*3+4));
       const mbLabel=det.mb?(det.mb_local?'local':det.mb_approx?'mb~'+det.mb.toFixed(1):'mb='+det.mb.toFixed(1)):'mb pending';
       const m=L.circleMarker([la,lo],{radius:r,color:'#f85149',fillColor:'#f85149',fillOpacity:.6})
         .bindPopup(`${det.ts}<br>${det.stations.join(', ')}<br>${mbLabel}`).addTo(map);
