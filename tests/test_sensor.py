@@ -220,14 +220,14 @@ class TestLocateEpicenter(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_synthetic_epicenter(self):
-        # Place a synthetic epicenter and compute synthetic travel times
-        import math
+        # Generate synthetic arrivals using the same IASP91 travel-time model
+        # that locate_epicenter uses, so the inversion is self-consistent.
         epi_lat, epi_lon, t0 = 45.0, 15.0, 0.0
         arrivals = []
         for key in ['GE.APE', 'GE.MORC', 'GE.WLF']:
             lat, lon = sensor.station_coords[key]
             dist = sensor.haversine_km(epi_lat, epi_lon, lat, lon)
-            t_arr = t0 + dist / sensor.P_VEL_KM_S
+            t_arr = t0 + sensor.p_travel_time_s(dist)
             arrivals.append((key, t_arr))
 
         result = sensor.locate_epicenter(arrivals)
