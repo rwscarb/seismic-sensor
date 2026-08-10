@@ -1,16 +1,16 @@
 app = 'seismic-sensor'
-primary_region = 'sjc'
+primary_region = 'fra'
 
 [build]
 
 [env]
   SEEDLINK_SERVER  = 'geofon.gfz-potsdam.de:18000'
-  STATIONS         = 'GE.APE'
+  STATIONS         = 'GE.APE,GE.MORC'
   CHANNELS         = 'HHZ,HHN,HHE'
   THRESHOLD        = '0.835'
   N_SEEDS          = '3'
   ALERT_COOLDOWN   = '60.0'
-  N_CONSENSUS      = '1'
+  N_CONSENSUS      = '2'
   CONSENSUS_WINDOW = '120'
   CHECKPOINT_DIR   = '/checkpoints'
 
