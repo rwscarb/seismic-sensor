@@ -1343,6 +1343,30 @@ def start_web_server():
             return Response('rate limited', status=429, mimetype='text/plain')
         return jsonify(sensor_state.to_dict())
 
+    @app.route('/api/epcalc', methods=['POST'])
+    def epcalc():
+        """Compute epicenter from station arrival times.
+
+        Body (JSON):
+          {"arrivals": [["NET.STA", unix_ts], ...]}
+
+        Returns:
+          {"lat": float, "lon": float, "rms": float, "n": int}
+          or {"error": "..."} on failure.
+        """
+        try:
+            body = request.get_json(force=True)
+            arrivals = [(str(k), float(t)) for k, t in body.get('arrivals', [])]
+        except Exception as e:
+            return jsonify({'error': f'bad request: {e}'}), 400
+        if len(arrivals) < LOC_MIN_STA:
+            return jsonify({'error': f'need at least {LOC_MIN_STA} arrivals, got {len(arrivals)}'}), 422
+        result = locate_epicenter(arrivals)
+        if result is None:
+            return jsonify({'error': 'localization failed (optimizer did not converge)'}), 422
+        lat, lon, rms = result
+        return jsonify({'lat': round(lat, 4), 'lon': round(lon, 4), 'rms': round(rms, 3), 'n': len(arrivals)})
+
     t = threading.Thread(
         target=lambda: app.run(host='0.0.0.0', port=WEB_PORT, threaded=True),
         daemon=True,
