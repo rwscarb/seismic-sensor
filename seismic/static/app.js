@@ -34,7 +34,7 @@ function _pollLogs(){
   }).catch(()=>{});
 }
 setInterval(_pollLogs,1500);
-let filterConfirmed=true, filterMinMb=0, filterLocal=true, detDisplayLimit=20;
+let filterConfirmed=false, filterMinMb=0, filterLocal=false, detDisplayLimit=20;
 const _mbPendingNotify=new Set(); // ts values awaiting mb before firing desktop notification
 // Read initial state from URL params
 const _deepLinkTs=(()=>{
