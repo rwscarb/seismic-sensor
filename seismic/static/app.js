@@ -230,10 +230,15 @@ function zoomR(base){
   const f=Math.max(0.35,Math.min(1.0,(z-1)/7));
   return Math.max(2,base*f);
 }
+function _markerBaseStyle(usgs,dimmed){
+  // usgs-corrected = purple; sensor-only = red dashed (unreliable location)
+  if(usgs) return {color:'#7048aa',weight:1.5,fillColor:'#a371f7',fillOpacity:dimmed?.25:.85,dashArray:null};
+  return {color:'#6e3010',weight:1,fillColor:'#f85149',fillOpacity:dimmed?.15:.5,dashArray:'5,3'};
+}
 function applyMarkerSelection(){
-  detMarkers.forEach(({m,ts,r})=>{
+  detMarkers.forEach(({m,ts,r,usgs})=>{
     if(ts===selectedDetTs){
-      m.setStyle({color:'#2ea043',weight:1,fillColor:'#3fb950',fillOpacity:.95});
+      m.setStyle({color:'#2ea043',weight:1.5,fillColor:'#3fb950',fillOpacity:.95,dashArray:null});
       if(_pulseTs!==selectedDetTs){
         if(_pulseIv){clearInterval(_pulseIv);_pulseIv=null;}
         _pulseTs=selectedDetTs;_pulsePhase=0;
@@ -246,7 +251,7 @@ function applyMarkerSelection(){
       }
     } else {
       m.setRadius(zoomR(r));
-      m.setStyle({color:'#c0392b',fillColor:'#f85149',fillOpacity:selectedDetTs?0.2:0.85});
+      m.setStyle(_markerBaseStyle(usgs,!!selectedDetTs));
     }
   });
   if(!selectedDetTs&&_pulseIv){clearInterval(_pulseIv);_pulseIv=null;_pulseTs=null;}
@@ -525,7 +530,7 @@ function update(){
         +`<div class="tip-loc">${locStr}</div>`
         +origLink
         +'</div>';
-      const m=L.circleMarker([la,lo],{radius:zoomR(r),color:'#c0392b',weight:1,fillColor:'#f85149',fillOpacity:.85})
+      const m=L.circleMarker([la,lo],{radius:zoomR(r),..._markerBaseStyle(usgsCoords,false)})
         .bindTooltip(tipHtml,{sticky:false,direction:'top',className:'det-tip'}).addTo(map);
       m.on('click',(e)=>{
         L.DomEvent.stopPropagation(e);
@@ -540,7 +545,7 @@ function update(){
         }
       });
       m.on('mouseout',()=>{if(_pinnedMarker===m)m.openTooltip();});
-      kept.push({m,ts:det.ts,r,lat:la,lon:lo});
+      kept.push({m,ts:det.ts,r,lat:la,lon:lo,usgs:usgsCoords});
     });
     detMarkers.length=0;kept.forEach(x=>detMarkers.push(x));
     if(markersChanged)applyMarkerSelection();
