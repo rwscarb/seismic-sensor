@@ -36,7 +36,7 @@ primary_region = 'fra'
   min_machines_running = 1
 
   [[http_service.checks]]
-    grace_period = "20s"
+    grace_period = "5s"
     interval     = "5s"
     method       = "GET"
     path         = "/health"

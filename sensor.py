@@ -32,12 +32,7 @@ from seismic.web import start_web_server
 
 
 def run_sensor(models):
-    init_station_state()
-    sensor_state.detections = _load_detections()
-
-    # Start Flask immediately so /health responds during rolling deploy health checks.
-    # SeedLink connects later after the network-ready delay.
-    start_web_server()
+    # Web server + state already initialized before model loading (see __main__)
 
     startup_delay = int(os.environ.get('STARTUP_DELAY', '8'))
     if startup_delay > 0:
@@ -95,6 +90,13 @@ def run_sensor(models):
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
+    # Phase 1: restore detections from disk and start Flask immediately so
+    # /health responds during the deploy gap while models are still loading.
+    init_station_state()
+    sensor_state.detections = _load_detections()
+    start_web_server()
+
+    # Phase 2: load ML models (slow — 15-30s; /health already answering above)
     print("Seismic Detection Sensor (multi-station consensus + TDOA localization)", flush=True)
     print(f"  model:   StreamingNet {N_SEEDS}-seed ensemble (H-{P_LEAD_S}s, mean-conf)", flush=True)
     print(f"  device:  {DEVICE}", flush=True)
@@ -103,4 +105,6 @@ if __name__ == '__main__':
     print(f"  {N_SEEDS} models loaded.\n", flush=True)
     print("Loading PhaseNet (SeisBench)...", flush=True)
     load_phasenet()
+
+    # Phase 3: connect to SeedLink and stream
     run_sensor(models)
