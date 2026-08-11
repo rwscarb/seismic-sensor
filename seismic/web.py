@@ -89,12 +89,12 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 #left-panel{overflow-y:auto;min-height:0}
 #map{height:100%;border-radius:4px;background:#000}
 #map-wrap{position:relative;border-radius:4px;overflow:hidden;min-height:0}
-#event-log{position:absolute;bottom:20px;right:10px;z-index:400;width:300px;max-height:160px;overflow-y:auto;pointer-events:none;display:flex;flex-direction:column-reverse;gap:2px}
-#event-log .elog{font-size:10px;font-family:monospace;color:#8b949e;background:rgba(13,17,23,0.82);border-left:2px solid #30363d;padding:2px 6px;border-radius:0 3px 3px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#event-log .elog.elog-det{border-color:#f85149;color:#e6edf3}
-#event-log .elog.elog-usgs{border-color:#3fb950;color:#e6edf3}
-#event-log .elog.elog-sta{border-color:#58a6ff}
-#event-log .elog.elog-info{border-color:#6e7681}
+#event-log{position:absolute;bottom:24px;right:10px;z-index:400;width:340px;max-height:180px;overflow-y:auto;pointer-events:auto;background:rgba(13,17,23,0.88);border:1px solid #30363d;border-radius:4px;padding:4px 0}
+#event-log .elog{font-size:10.5px;font-family:monospace;color:#8b949e;padding:1px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.5}
+#event-log .elog.elog-det{color:#f85149;border-left:2px solid #f85149;padding-left:6px}
+#event-log .elog.elog-usgs{color:#3fb950;border-left:2px solid #3fb950;padding-left:6px}
+#event-log .elog.elog-sta{color:#8b949e}
+#event-log .elog.elog-info{color:#6e7681}
 .right-col{display:flex;flex-direction:column;min-height:0;background:#161b22;border:1px solid #30363d;border-radius:6px;overflow:hidden}
 .no-data{color:#6e7681;font-style:italic;font-size:11px}
 /* fullscreen map */
@@ -211,12 +211,9 @@ function _classifyLog(msg){
 function _pollLogs(){
   fetch('/api/logs').then(r=>r.json()).then(d=>{
     const entries=d.entries||[];
-    // render newest-first, deduplicate by t+msg
-    const rendered=entries.slice().reverse().slice(0,60).map(e=>{
-      const cls=_classifyLog(e.msg);
-      return `<div class="elog ${cls}">${e.t} ${e.msg}</div>`;
-    });
-    _logEl.innerHTML=rendered.join('');
+    const atBottom=_logEl.scrollHeight-_logEl.scrollTop<=_logEl.clientHeight+4;
+    _logEl.innerHTML=entries.slice(-60).map(e=>`<div class="elog ${_classifyLog(e.msg)}">${e.t} ${e.msg}</div>`).join('');
+    if(atBottom)_logEl.scrollTop=_logEl.scrollHeight;
   }).catch(()=>{});
 }
 setInterval(_pollLogs,1500);
@@ -581,12 +578,17 @@ function update(){
       </div>`;
     }).join('');
     if(dDiv.innerHTML!==newHtml)dDiv.innerHTML=newHtml;
-    // epicenter markers — diff by ts to avoid destroying open popups/pulse
+    // epicenter markers — diff by ts; force-recreate when USGS coords arrive after initial placement
     const epiDets=d.detections.filter(det=>!det.teleseismic&&(det.epicenter||(det.usgs&&det.usgs.lat!=null)));
     const epiTsSet=new Set(epiDets.map(det=>det.ts));
     const keptTs=new Set();
-    // remove stale markers
-    detMarkers.forEach(({m,ts})=>{if(!epiTsSet.has(ts))map.removeLayer(m);else keptTs.add(ts);});
+    // remove stale or outdated markers (USGS coords arrived after sensor-only placement)
+    detMarkers.forEach(({m,ts,hasUsgs})=>{
+      const det=epiDets.find(d=>d.ts===ts);
+      const nowHasUsgs=det&&det.usgs&&det.usgs.lat!=null;
+      if(!epiTsSet.has(ts)||(nowHasUsgs&&!hasUsgs)){map.removeLayer(m);}
+      else{keptTs.add(ts);}
+    });
     const kept=detMarkers.filter(({ts})=>keptTs.has(ts));
     // add new markers
     let markersChanged=kept.length!==detMarkers.length;
@@ -615,7 +617,7 @@ function update(){
         if(_pinnedMarker===m){_unpinMarker();}else{_pinMarker(m);}
       });
       m.on('mouseout',()=>{if(_pinnedMarker===m)m.openTooltip();});
-      kept.push({m,ts:det.ts,r});
+      kept.push({m,ts:det.ts,r,hasUsgs:usgsCoords});
     });
     detMarkers.length=0;kept.forEach(x=>detMarkers.push(x));
     if(markersChanged)applyMarkerSelection();
