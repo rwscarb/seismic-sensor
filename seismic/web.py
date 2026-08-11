@@ -382,7 +382,10 @@ function showDesktopNotification(det){
 }
 function update(){
   fetch('/api/state').then(r=>r.json()).then(d=>{
-    document.getElementById('last-update').textContent='updated '+new Date().toLocaleTimeString();
+    const _now=new Date();
+    const _localStr=_now.toLocaleTimeString('en',{timeZone:_activeTz(),hour:'2-digit',minute:'2-digit',second:'2-digit'})+' '+_tzAbbr();
+    const _utcStr=_now.toLocaleTimeString('en',{timeZone:'UTC',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' UTC';
+    document.getElementById('last-update').textContent='updated '+_localStr+' ('+_utcStr+')';
     if(d.station_coords)Object.assign(sCoords,d.station_coords);
     // stations
     const sDiv=document.getElementById('stations');
