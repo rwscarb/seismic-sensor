@@ -284,6 +284,7 @@ function showDesktopNotification(det){
 }
 function update(){
   fetch('/api/state').then(r=>r.json()).then(d=>{
+    document.getElementById('status-dot').style.background='';
     const _now=new Date();
     const _localStr=_now.toLocaleTimeString('en',{timeZone:_activeTz(),hour:'2-digit',minute:'2-digit',second:'2-digit'})+' '+_tzAbbr();
     const _utcStr=_now.toLocaleTimeString('en',{timeZone:'UTC',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' UTC';
