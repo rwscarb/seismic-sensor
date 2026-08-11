@@ -14,19 +14,19 @@ def estimate_mb(key, p_arrival_unix, epicenter_latlon):
     A   = peak ground displacement (nm) from instrument-corrected HHZ
     T   = dominant period at the peak (s)
     Q   = empirical attenuation correction (Richter 1958, shallow teleseismic P)
-    Returns (mb_float, None) or (None, reason_str).
+    Returns (mb_float, tag, amp_nm) or (None, reason_str, None).
     """
     from seismic.consensus import station_rings  # late import to avoid circular dependency
 
     if key not in station_inventory:
-        return None, "no response inventory"
+        return None, "no response inventory", None
     if key not in station_rings or 'HHZ' not in station_rings[key]:
-        return None, "no HHZ ring"
+        return None, "no HHZ ring", None
 
     ring = station_rings[key]['HHZ']
     data = np.array(list(ring), dtype=np.float32)
     if len(data) < 200:
-        return None, "insufficient buffer"
+        return None, "insufficient buffer", None
 
     from obspy import Trace as OTrace, UTCDateTime
     buf_end = time.time()
@@ -46,18 +46,18 @@ def estimate_mb(key, p_arrival_unix, epicenter_latlon):
         # IASPEI mb is defined in the 1 Hz band — bandpass before measuring A and T
         tr.filter('bandpass', freqmin=0.5, freqmax=2.0, corners=4, zerophase=True)
     except Exception as e:
-        return None, f"response removal: {e}"
+        return None, f"response removal: {e}", None
 
     data_nm = tr.data * 1e9  # m → nm
 
     p_idx = max(0, int((p_arrival_unix - buf_start) * TARGET_SRATE))
     p_win = data_nm[p_idx: p_idx + int(MB_WIN_S * TARGET_SRATE)]
     if len(p_win) < 50:
-        return None, "P-window outside buffer"
+        return None, "P-window outside buffer", None
 
     A = float(np.abs(p_win).max())
     if A <= 0:
-        return None, "zero amplitude"
+        return None, "zero amplitude", None
 
     # Measure T from zero crossings; after 1 Hz bandpass T should be ~0.5-2s
     zc = np.where(np.diff(np.sign(p_win)))[0]
