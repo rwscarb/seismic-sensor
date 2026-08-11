@@ -540,11 +540,13 @@ function update(){
         +`\n${mbNote}`
         +(det.usgs?(()=>{const src=(det.usgs.source||'usgs').toUpperCase();return `\n${src}: M${det.usgs.mag}${magType} — ${place}`;})():det.usgs_checked?`\nNo catalog match (USGS M%(usgs_min_mag)s+ / EMSC M%(emsc_min_mag)s+)`:`\nCatalog lookup pending`);
       const selCls=det.ts===selectedDetTs?' det-selected':'';
-      const canClick=!det.teleseismic&&det.epicenter;
+      const pinLat=det.usgs&&det.usgs.lat!=null?det.usgs.lat:det.epicenter?det.epicenter[0]:null;
+      const pinLon=det.usgs&&det.usgs.lon!=null?det.usgs.lon:det.epicenter?det.epicenter[1]:null;
+      const canClick=!det.teleseismic&&pinLat!=null;
       const mutedCls=canClick?'':' det-muted';
       const verifCls=(det.usgs&&canClick)?' det-verified':'';
       const rowClick=canClick
-        ?`onclick="flyToEpi(${det.epicenter[0]},${det.epicenter[1]},'${det.ts}')" style="cursor:pointer"`:'';
+        ?`onclick="flyToEpi(${pinLat},${pinLon},'${det.ts}')" style="cursor:pointer"`:'';
       return sep+`<div class="det${selCls}${mutedCls}${verifCls}" data-ts="${det.ts}" data-unix-ts="${det.unix_ts}" ${rowClick} title="${escAttr(detTitle)}">
         <div class="det-row1"><span class="det-time">${tPart}</span><span class="det-age">${fmtAge(det.unix_ts)}</span></div>
         <div class="det-row2"><span class="det-stas">${det.stations.join(' · ')}</span><span class="det-chips-inline">${mbChip}${epiChip}${usgsIcon}</span></div>
@@ -552,7 +554,7 @@ function update(){
     }).join('');
     if(dDiv.innerHTML!==newHtml)dDiv.innerHTML=newHtml;
     // epicenter markers — diff by ts to avoid destroying open popups/pulse
-    const epiDets=d.detections.filter(det=>det.epicenter&&!det.teleseismic);
+    const epiDets=d.detections.filter(det=>!det.teleseismic&&(det.epicenter||(det.usgs&&det.usgs.lat!=null)));
     const epiTsSet=new Set(epiDets.map(det=>det.ts));
     const keptTs=new Set();
     // remove stale markers
@@ -563,18 +565,20 @@ function update(){
     epiDets.forEach(det=>{
       if(keptTs.has(det.ts))return;
       markersChanged=true;
-      const [la,lo]=det.epicenter;
+      const usgsCoords=det.usgs&&det.usgs.lat!=null;
+      const la=usgsCoords?det.usgs.lat:det.epicenter[0];
+      const lo=usgsCoords?det.usgs.lon:det.epicenter[1];
       const mb=det.mb||4;
       const r=Math.max(4,Math.min(14,(mb-2)*3+4));
       const mbLabel=det.mb?(det.mb_local?'local':det.mb_approx?'mb~'+det.mb.toFixed(1):'mb='+det.mb.toFixed(1)):'mb pending';
       const mbClass=mb>=5?'high':mb>=4?'mid':'low';
-      const locStr=det.epicenter?`${Math.abs(det.epicenter[0]).toFixed(2)}°${det.epicenter[0]>=0?'N':'S'} `
-        +`${Math.abs(det.epicenter[1]).toFixed(2)}°${det.epicenter[1]>=0?'E':'W'}`:'';
+      const locSrc=usgsCoords?'USGS':'sensor';
+      const locStr=`${locSrc}: ${Math.abs(la).toFixed(2)}°${la>=0?'N':'S'} ${Math.abs(lo).toFixed(2)}°${lo>=0?'E':'W'}`;
       const tipHtml=`<div class="det-tip">`
         +`<div class="tip-time">${fmtLocal(det.ts)}</div>`
         +`<div class="tip-mb ${mbClass}">${mbLabel}</div>`
         +`<div class="tip-stas">${det.stations.join(' · ')}</div>`
-        +(locStr?`<div class="tip-loc">${locStr}</div>`:'')
+        +`<div class="tip-loc">${locStr}</div>`
         +'</div>';
       const m=L.circleMarker([la,lo],{radius:zoomR(r),color:'#c0392b',weight:1,fillColor:'#f85149',fillOpacity:.85})
         .bindTooltip(tipHtml,{sticky:false,direction:'top',className:'det-tip'}).addTo(map);
