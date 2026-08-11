@@ -23,8 +23,8 @@ KNOWN_COORDS = {
     'IU.COLA': (64.900, -147.850),  # College, Alaska
 }
 
-station_coords    = {}   # populated at startup
-station_inventory = {}   # key → obspy Inventory with instrument response
+station_coords = {}    # populated at startup
+station_inventory = {}  # key → obspy Inventory with instrument response
 
 
 def _fetch_coords_from(fdsn_client_name, station_list):
@@ -42,16 +42,22 @@ def _fetch_coords_from(fdsn_client_name, station_list):
             try:
                 inv = client.get_stations(network=net, station=sta, level="response")
                 st = inv[0][0]
-                station_coords[key]    = (st.latitude, st.longitude)
+                station_coords[key] = (st.latitude, st.longitude)
                 station_inventory[key] = inv
-                print(f"  coords {key}: {st.latitude:.3f}°N {st.longitude:.3f}°E (FDSN+response)", flush=True)
+                print(
+                    f"  coords {key}: {st.latitude:.3f}°N {st.longitude:.3f}°E (FDSN+response)",
+                    flush=True,
+                )
                 fetched = True
             except Exception:
                 try:
                     inv_s = client.get_stations(network=net, station=sta, level="station")
                     st = inv_s[0][0]
                     station_coords[key] = (st.latitude, st.longitude)
-                    print(f"  coords {key}: {st.latitude:.3f}°N {st.longitude:.3f}°E (FDSN, no response)", flush=True)
+                    print(
+                        f"  coords {key}: {st.latitude:.3f}°N {st.longitude:.3f}°E (FDSN, no response)",
+                        flush=True,
+                    )
                     fetched = True
                 except Exception:
                     pass
@@ -66,7 +72,6 @@ def _fetch_coords_from(fdsn_client_name, station_list):
 
 def fetch_station_coords():
     """Fetch FDSN coords + instrument response; fall back to hardcoded gracefully."""
-    global station_coords
     try:
         if STATIONS:
             print(f"  [geofon] fetching {len(STATIONS)} station(s)...", flush=True)
@@ -85,21 +90,22 @@ def fetch_station_coords():
 def haversine_km(lat1, lon1, lat2, lon2):
     R = 6371.0
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi  = math.radians(lat2 - lat1)
-    dlam  = math.radians(lon2 - lon1)
+    dphi = math.radians(lat2 - lat1)
+    dlam = math.radians(lon2 - lon1)
     a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlam/2)**2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
 # IASP91 P travel times (seconds) for shallow focus (h≈15 km), keyed by distance (degrees).
 # Source: Kennett & Engdahl (1991), interpolated from TauPy; values at 0° extrapolated to 0.
-_IASP91_DEG = np.array([0, 2, 5, 10, 15, 20, 25, 30, 35, 40,
-                         45, 50, 55, 60, 65, 70, 75, 80, 90, 100, 110, 120, 150, 180],
-                        dtype=np.float64)
-_IASP91_SEC = np.array([0, 27.0, 64.7, 130.7, 196.5, 256.8, 321.0, 383.5, 444.5, 507.0,
-                         566.7, 628.5, 689.2, 747.0, 802.5, 855.0, 905.0, 952.0, 1038.0,
-                         1116.0, 1185.0, 1250.0, 1390.0, 1510.0],
-                        dtype=np.float64)
+_IASP91_DEG = np.array(
+    [0, 2, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 90, 100, 110, 120, 150, 180],
+    dtype=np.float64)
+_IASP91_SEC = np.array(
+    [0, 27.0, 64.7, 130.7, 196.5, 256.8, 321.0, 383.5, 444.5, 507.0,
+     566.7, 628.5, 689.2, 747.0, 802.5, 855.0, 905.0, 952.0, 1038.0,
+     1116.0, 1185.0, 1250.0, 1390.0, 1510.0],
+    dtype=np.float64)
 
 
 def p_travel_time_s(dist_km):
@@ -110,12 +116,13 @@ def p_travel_time_s(dist_km):
 
 # Richter (1958) Q(Δ) table for body-wave magnitude; amplitude in µm.
 # We measure in nm, so subtract log10(1e6/1e9)=−3 → effectively subtract 3 from these values.
-_RICHTER_Q_DEG = np.array([2, 5, 10, 15, 20, 25, 30, 35, 40, 45,
-                             50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100],
-                            dtype=np.float64)
-_RICHTER_Q_VAL = np.array([3.96, 4.88, 5.26, 5.57, 5.84, 6.07, 6.24, 6.36, 6.44, 6.46,
-                             6.44, 6.38, 6.33, 6.27, 6.21, 6.14, 6.09, 6.04, 6.01, 5.99, 5.97],
-                            dtype=np.float64)
+_RICHTER_Q_DEG = np.array(
+    [2, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100],
+    dtype=np.float64)
+_RICHTER_Q_VAL = np.array(
+    [3.96, 4.88, 5.26, 5.57, 5.84, 6.07, 6.24, 6.36, 6.44, 6.46,
+     6.44, 6.38, 6.33, 6.27, 6.21, 6.14, 6.09, 6.04, 6.01, 5.99, 5.97],
+    dtype=np.float64)
 
 
 def richter_q_nm(dist_deg):
@@ -144,13 +151,13 @@ def locate_epicenter(arrivals, sp_distances=None):
     if len(obs) < LOC_MIN_STA:
         return None
 
-    sta_lat  = np.array([station_coords[k][0] for k, _ in obs])
-    sta_lon  = np.array([station_coords[k][1] for k, _ in obs])
+    sta_lat = np.array([station_coords[k][0] for k, _ in obs])
+    sta_lon = np.array([station_coords[k][1] for k, _ in obs])
     arr_time = np.array([t for _, t in obs])
 
     # Stations + known S-P distances (independent of origin time)
     sp_keys = []
-    sp_km   = []
+    sp_km = []
     if sp_distances:
         for k, d in sp_distances.items():
             if k in station_coords:
@@ -159,11 +166,11 @@ def locate_epicenter(arrivals, sp_distances=None):
 
     def cost(params):
         lat0, lon0 = params
-        dists    = np.array([haversine_km(lat0, lon0, sta_lat[i], sta_lon[i])
-                             for i in range(len(obs))])
-        travel   = np.array([p_travel_time_s(d) for d in dists])
-        t0_opt   = float(np.mean(arr_time - travel))
-        pred     = t0_opt + travel
+        dists = np.array([haversine_km(lat0, lon0, sta_lat[i], sta_lon[i])
+                          for i in range(len(obs))])
+        travel = np.array([p_travel_time_s(d) for d in dists])
+        t0_opt = float(np.mean(arr_time - travel))
+        pred = t0_opt + travel
         tdoa_res = float(np.sum((pred - arr_time) ** 2))
 
         # S-P distance constraint: penalise deviation from PhaseNet-derived distance.
@@ -172,20 +179,20 @@ def locate_epicenter(arrivals, sp_distances=None):
         if sp_keys:
             for k, target_km in zip(sp_keys, sp_km):
                 slat, slon = station_coords[k]
-                actual_km  = haversine_km(lat0, lon0, slat, slon)
+                actual_km = haversine_km(lat0, lon0, slat, slon)
                 sp_res += (actual_km - target_km) ** 2 / (target_km * 0.2) ** 2
             sp_res *= (tdoa_res / max(len(obs), 1)) * 2
 
         return tdoa_res + sp_res
 
     # ── Stage 1: coarse global grid search at 5° resolution ──────────────────
-    best_cost  = float('inf')
+    best_cost = float('inf')
     best_start = (float(np.mean(sta_lat)), float(np.mean(sta_lon)))
     for glat in range(-85, 91, 5):
         for glon in range(-180, 181, 5):
             c = cost((glat, glon))
             if c < best_cost:
-                best_cost  = c
+                best_cost = c
                 best_start = (glat, glon)
 
     # ── Stage 2: Nelder-Mead refinement from best grid point ─────────────────
@@ -193,8 +200,10 @@ def locate_epicenter(arrivals, sp_distances=None):
                    options={'xatol': 0.02, 'fatol': 0.05, 'maxiter': 100000})
 
     lat_e, lon_e = res.x
-    dists_final  = np.array([haversine_km(lat_e, lon_e, sta_lat[i], sta_lon[i])
-                              for i in range(len(obs))])
+    dists_final = np.array([
+        haversine_km(lat_e, lon_e, sta_lat[i], sta_lon[i])
+        for i in range(len(obs))
+    ])
     travel_final = np.array([p_travel_time_s(d) for d in dists_final])
     t0_e = float(np.mean(arr_time - travel_final))
     # RMS uses only TDOA residuals for interpretability

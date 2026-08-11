@@ -49,7 +49,7 @@ class StreamingNet(nn.Module):
         with torch.no_grad():
             xb = torch.tensor(window_np[None], dtype=torch.float32)
             logits, mag = self(xb)
-        gap    = float(logits[0, 1] - logits[0, 0])          # raw logit gap (pre-scaling)
+        gap = float(logits[0, 1] - logits[0, 0])          # raw logit gap (pre-scaling)
         scaled = logits / TEMP_SCALE
         return float(F.softmax(scaled, dim=1)[0, 1]), float(mag[0]), gap
 
@@ -71,8 +71,8 @@ def load_ensemble():
 def ensemble_predict(models, window_np):
     results = [m.predict(window_np) for m in models]
     confs = [r[0] for r in results]
-    mags  = [r[1] for r in results]
-    gaps  = [r[2] for r in results]
+    mags = [r[1] for r in results]
+    gaps = [r[2] for r in results]
     return float(np.mean(confs)), float(np.mean(mags)), float(np.mean(gaps))
 
 
@@ -107,7 +107,7 @@ def refine_picks_phasenet(p_arr_snapshot):
     from obspy import Trace as OTrace, Stream as OStream, UTCDateTime
     from seismic.consensus import station_rings  # late import to avoid circular dependency
 
-    refined_p    = dict(p_arr_snapshot)
+    refined_p = dict(p_arr_snapshot)
     sp_distances = {}
 
     for key, p_est in p_arr_snapshot.items():
@@ -117,14 +117,14 @@ def refine_picks_phasenet(p_arr_snapshot):
         if any(len(ring.get(ch, [])) < int(30 * TARGET_SRATE) for ch in CHANNELS):
             continue
 
-        buf_end   = time.time()
+        buf_end = time.time()
         buf_start = buf_end - len(ring[CHANNELS[0]]) / TARGET_SRATE
 
         # Extract [P - 5s, P + 25s] window (30s total = 3000 samples at 100 sps)
-        win_start  = p_est - 5.0
-        win_end    = p_est + 25.0
-        idx_start  = max(0, int((win_start - buf_start) * TARGET_SRATE))
-        idx_end    = min(len(ring[CHANNELS[0]]), int((win_end - buf_start) * TARGET_SRATE))
+        win_start = p_est - 5.0
+        win_end = p_est + 25.0
+        idx_start = max(0, int((win_start - buf_start) * TARGET_SRATE))
+        idx_end = min(len(ring[CHANNELS[0]]), int((win_end - buf_start) * TARGET_SRATE))
         actual_start = buf_start + idx_start / TARGET_SRATE
 
         try:
@@ -134,11 +134,11 @@ def refine_picks_phasenet(p_arr_snapshot):
                 if len(data) < 100:
                     break
                 tr = OTrace(data=data)
-                tr.stats.network       = key.split('.')[0]
-                tr.stats.station       = key.split('.')[1]
-                tr.stats.channel       = ch
+                tr.stats.network = key.split('.')[0]
+                tr.stats.station = key.split('.')[1]
+                tr.stats.channel = ch
                 tr.stats.sampling_rate = TARGET_SRATE
-                tr.stats.starttime     = UTCDateTime(actual_start)
+                tr.stats.starttime = UTCDateTime(actual_start)
                 st.append(tr)
             else:
                 picks = _phasenet.classify(st, batch_size=1).picks
@@ -157,7 +157,7 @@ def refine_picks_phasenet(p_arr_snapshot):
                     best_s = max(s_picks, key=lambda pk: pk.peak_value)
                     s_unix = best_s.peak_time.timestamp
                     p_used = refined_p.get(key, p_est)
-                    sp_dt  = s_unix - p_used
+                    sp_dt = s_unix - p_used
                     if 5.0 <= sp_dt <= 1200.0:    # sanity: 5s–20min S-P
                         dist_km = sp_dt * _SP_KM_PER_S
                         sp_distances[key] = dist_km
