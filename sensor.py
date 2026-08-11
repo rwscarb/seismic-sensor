@@ -29,6 +29,7 @@ from seismic.state import sensor_state, _load_detections
 from seismic.tui import run_tui
 from seismic.watcher import poll_usgs_significant
 from seismic.web import start_web_server
+from seismic.btcvm_anchor import start_batch_scheduler
 
 
 def run_sensor(models):
@@ -95,6 +96,7 @@ if __name__ == '__main__':
     init_station_state()
     sensor_state.detections = _load_detections()
     start_web_server()
+    start_batch_scheduler()
 
     # Phase 2: load ML models (slow — 15-30s; /health already answering above)
     print("Seismic Detection Sensor (multi-station consensus + TDOA localization)", flush=True)

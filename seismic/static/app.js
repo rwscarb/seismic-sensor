@@ -542,19 +542,20 @@ function _updateBody(d){
       const verifCls=(det.usgs&&canClick)?' det-verified':'';
       const rowClick=canClick
         ?`onclick="flyToEpi(${pinLat},${pinLon},'${det.ts}')" style="cursor:pointer"`:'';
-      // btcvm anchor icon
-      const btcEntry=_btcvmByUnix[det.unix_ts!=null?det.unix_ts.toFixed(3):null];
+      // btcvm anchor icon — check batch index first (on-chain), then ledger-only
+      const _btcUnixKey=det.unix_ts!=null?det.unix_ts.toFixed(3):null;
+      const _btcLedger=_btcUnixKey?_btcvmByUnix[_btcUnixKey]:null;
+      const _btcBatch=_btcLedger?_btcvmBatchByHash[_btcLedger.det_hash]:null;
       let btcIcon='';
-      if(btcEntry){
-        const isConf=btcEntry.label==='confirmed';
-        const short=btcEntry.commitment?btcEntry.commitment.slice(0,12)+'…':'';
-        const blk=btcEntry.block_height||'';
-        const tip=`${isConf?'Confirmed':'Raw'} anchor · block ${blk}\ncommitment: ${btcEntry.commitment||''}\n${btcEntry.tx_hash?'tx: '+btcEntry.tx_hash:'ledger only'}`;
-        if(btcEntry.tx_hash){
-          btcIcon=`<a class="det-usgs-icon" href="https://blockstream.info/tx/${encodeURIComponent(btcEntry.tx_hash)}" target="_blank" rel="noopener" title="${escAttr(tip)}" style="text-decoration:none;color:${isConf?'#f7931a':'#a07830'}" onclick="event.stopPropagation()">₿</a>`;
-        } else {
-          btcIcon=`<span class="det-usgs-icon" style="color:#a07830" title="${escAttr(tip)}">₿</span>`;
-        }
+      if(_btcBatch){
+        // on-chain via daily Merkle batch
+        const tip=`On-chain (daily batch) · block ${_btcBatch.block_height}\nmerkle root: ${_btcBatch.merkle_root||''}\ntx: ${_btcBatch.tx_hash}\n${_btcBatch.n} detections in batch`;
+        btcIcon=`<a class="det-usgs-icon" href="https://blockstream.info/tx/${encodeURIComponent(_btcBatch.tx_hash)}" target="_blank" rel="noopener" title="${escAttr(tip)}" style="text-decoration:none;color:#f7931a" onclick="event.stopPropagation()">₿</a>`;
+      } else if(_btcLedger){
+        // ledger-only (batch pending)
+        const isConf=_btcLedger.label==='confirmed';
+        const tip=`Ledger anchor (batch pending) · block ${_btcLedger.block_height}\ncommitment: ${_btcLedger.commitment||''}\n${isConf?'Catalog confirmed':'Raw detection'}`;
+        btcIcon=`<span class="det-usgs-icon" style="color:#a07830" title="${escAttr(tip)}">₿</span>`;
       }
       return sep+`<div class="det${selCls}${mutedCls}${verifCls}" data-ts="${det.ts}" data-unix-ts="${det.unix_ts}" ${rowClick} title="${escAttr(detTitle)}">
         <div class="det-row1"><span class="det-time">${tPart}</span><span class="det-age">${fmtAge(det.unix_ts)}</span></div>
@@ -664,20 +665,25 @@ function _updateBody(d){
         <div style="color:#a371f7;margin-top:2px">${usgsStr}</div>`;
     }
 }
-// btcvm ledger — keyed by det_unix (rounded to ms) for fast lookup
+// btcvm ledger — two indexes:
+//   _btcvmByUnix: det_unix → best raw/confirmed entry (ledger-only anchor)
+//   _btcvmBatchByHash: det_hash → batch entry (on-chain anchor)
 let _btcvmByUnix={};
+let _btcvmBatchByHash={};
 function _pollBtcvm(){
   fetch('/api/btcvm').then(r=>r.json()).then(d=>{
-    const m={};
+    const byUnix={};
+    const byHash={};
     (d.entries||[]).forEach(e=>{
-      if(e.det_unix!=null){
-        // use rounded key to handle float precision; also store best entry per det
+      if(e.label==='batch'&&e.tx_hash&&Array.isArray(e.det_hashes)){
+        e.det_hashes.forEach(h=>{byHash[h]=e;});
+      } else if(e.det_unix!=null){
         const k=e.det_unix.toFixed(3);
-        // prefer confirmed over raw
-        if(!m[k]||e.label==='confirmed')m[k]=e;
+        if(!byUnix[k]||e.label==='confirmed')byUnix[k]=e;
       }
     });
-    _btcvmByUnix=m;
+    _btcvmByUnix=byUnix;
+    _btcvmBatchByHash=byHash;
   }).catch(()=>{});
 }
 _pollBtcvm();setInterval(_pollBtcvm,15000);
