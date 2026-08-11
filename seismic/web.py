@@ -221,6 +221,7 @@ function _pollLogs(){
 }
 setInterval(_pollLogs,1500);
 let filterConfirmed=true, filterMinMb=0, filterLocal=true, detDisplayLimit=20;
+const _mbPendingNotify=new Set(); // ts values awaiting mb before firing desktop notification
 // Read initial state from URL params
 const _deepLinkTs=(()=>{
   const p=new URLSearchParams(window.location.search);
@@ -457,11 +458,11 @@ if('Notification' in window && Notification.permission==='default'){
   Notification.requestPermission();
 }
 function showDesktopNotification(det){
-  if(!audioEnabled)return;
   if(!('Notification' in window)||Notification.permission!=='granted')return;
-  const mbStr=det.mb!=null?(det.mb_local?'local':det.mb_approx?`mb~${det.mb.toFixed(1)}`:`mb=${det.mb.toFixed(1)}`):'mb computing';
+  const mbStr=det.mb_local?'local':det.mb_approx?`mb~${det.mb.toFixed(1)}`:`mb=${det.mb.toFixed(1)}`;
+  const epiStr=det.epicenter?` · ${det.epicenter[0].toFixed(1)}°${det.epicenter[0]>=0?'N':'S'} ${Math.abs(det.epicenter[1]).toFixed(1)}°${det.epicenter[1]>=0?'E':'W'}`:'';
   new Notification('🌍 Seismic Detection',{
-    body:`${det.stations.join(' · ')} | ${mbStr}`,
+    body:`${det.stations.join(' · ')}\n${mbStr}${epiStr}`,
     tag:'seismic-det',
     renotify:true,
     silent:true,
@@ -526,9 +527,17 @@ function update(){
       const newest=dets[0];
       if(lastDetTs!==null && newest.ts!==lastDetTs){
         playDetectionAlert();
-        showDesktopNotification(newest);
+        if(newest.mb!=null){showDesktopNotification(newest);}
+        else{_mbPendingNotify.add(newest.ts);}
       }
       lastDetTs=newest.ts;
+      // fire deferred desktop notifications when mb arrives
+      dets.forEach(det=>{
+        if(_mbPendingNotify.has(det.ts)&&det.mb!=null){
+          _mbPendingNotify.delete(det.ts);
+          showDesktopNotification(det);
+        }
+      });
     }
     // last-event summary in header
     const sumEl=document.getElementById('last-event-summary');
