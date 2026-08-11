@@ -34,6 +34,7 @@ USGS_SIG_MIN_MAG = float(os.environ.get('USGS_SIG_MIN_MAG', '5.5'))      # min m
 # ±s around expected P-arrival to claim a match (5 min covers model error at teleseismic distances)
 TELE_MATCH_WINDOW = float(os.environ.get('TELE_MATCH_WINDOW', '300.0'))
 SLACK_SIGNING_SECRET = os.environ.get('SLACK_SIGNING_SECRET', '')    # Slack app signing secret
+APP_URL = os.environ.get('APP_URL', '').rstrip('/')                   # public base URL for deep links
 
 
 # Parse stations: "GE.APE,GE.MORC" → [('GE','APE'), ('GE','MORC')]

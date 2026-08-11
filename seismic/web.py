@@ -528,7 +528,7 @@ function update(){
       const verifCls=(det.usgs&&canClick)?' det-verified':'';
       const rowClick=canClick
         ?`onclick="flyToEpi(${det.epicenter[0]},${det.epicenter[1]},'${det.ts}')" style="cursor:pointer"`:'';
-      return sep+`<div class="det${selCls}${mutedCls}${verifCls}" data-ts="${det.ts}" ${rowClick} title="${escAttr(detTitle)}">
+      return sep+`<div class="det${selCls}${mutedCls}${verifCls}" data-ts="${det.ts}" data-unix-ts="${det.unix_ts}" ${rowClick} title="${escAttr(detTitle)}">
         <div class="det-row1"><span class="det-time">${tPart}</span><span class="det-age">${fmtAge(det.unix_ts)}</span></div>
         <div class="det-row2"><span class="det-stas">${det.stations.join(' · ')}</span><span class="det-chips-inline">${mbChip}${epiChip}${usgsIcon}</span></div>
       </div>`;
@@ -601,6 +601,28 @@ function update(){
   }).catch(()=>{document.getElementById('status-dot').style.background='#f85149'});
 }
 update();setInterval(update,3000);
+// Deep-link: ?det=<unix_ts> → highlight that detection row after first render
+(()=>{
+  const params=new URLSearchParams(window.location.search);
+  const detTs=params.get('det');
+  if(!detTs)return;
+  const target=parseFloat(detTs);
+  let attempts=0;
+  const tryHighlight=()=>{
+    const rows=document.querySelectorAll('.det-row');
+    for(const row of rows){
+      if(Math.abs((parseFloat(row.dataset.unixTs)||0)-target)<2){
+        row.scrollIntoView({behavior:'smooth',block:'center'});
+        row.style.outline='2px solid #58a6ff';
+        row.style.boxShadow='0 0 8px #58a6ff88';
+        setTimeout(()=>{row.style.outline='';row.style.boxShadow='';},4000);
+        return;
+      }
+    }
+    if(++attempts<8)setTimeout(tryHighlight,600);
+  };
+  setTimeout(tryHighlight,800);
+})();
 </script>
 </body>
 </html>"""

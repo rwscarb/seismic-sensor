@@ -22,6 +22,7 @@ primary_region = 'fra'
   IRIS_SERVER      = 'rtserve.iris.washington.edu:18000'
   IRIS_STATIONS    = 'IU.COR,CN.PGC,IU.KDAK,IU.COLA,IU.MANU,IU.CTAO,IU.FURI,IU.MSEY,IU.LPA,IU.SNZO'
   SEISBENCH_CACHE_ROOT = '/data/seisbench'
+  APP_URL              = 'https://seismic-sensor.fly.dev'
 
 [deploy]
   strategy     = "rolling"

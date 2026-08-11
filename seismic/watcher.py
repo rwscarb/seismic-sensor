@@ -2,7 +2,7 @@ import json
 import time
 
 from seismic.config import (
-    USGS_SIG_MIN_MAG, USGS_POLL_INTERVAL, TELE_MATCH_WINDOW, SLACK_WEBHOOK_URL,
+    USGS_SIG_MIN_MAG, USGS_POLL_INTERVAL, TELE_MATCH_WINDOW, SLACK_WEBHOOK_URL, APP_URL,
 )
 from seismic.localize import station_coords, haversine_km, p_travel_time_s
 from seismic.state import sensor_state
@@ -46,19 +46,28 @@ def _slack_sig_event(event, expected_arrival, matched_det):
     import urllib.request
     mag = event['mag']
     place = event['place']
+    eid = event.get('event_id', '')
     t_str = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(event['time']))
     arr_str = time.strftime('%H:%M:%SZ', time.gmtime(expected_arrival))
     if matched_det:
         lag = abs(matched_det.unix_ts - expected_arrival)
-        status = f'✅ DETECTED (±{lag:.0f}s, conf {matched_det.conf:.3f})'
+        det_ts = int(matched_det.unix_ts)
+        if APP_URL:
+            det_url = f'{APP_URL}/?det={det_ts}'
+            status = f'✅ <{det_url}|DETECTED> (±{lag:.0f}s, conf {matched_det.conf:.3f})'
+        else:
+            status = f'✅ DETECTED (±{lag:.0f}s, conf {matched_det.conf:.3f})'
     else:
         status = '❌ NOT DETECTED in log'
+    usgs_url = f'https://earthquake.usgs.gov/earthquakes/eventpage/{eid}/executive' if eid else ''
+    link_line = f'\n<{usgs_url}|View on USGS>' if usgs_url else ''
     text = (
         f'🌍 *Significant Earthquake — M{mag}*\n'
         f'Location: `{place}`\n'
         f'Origin: `{t_str}`\n'
         f'Expected P at sensor: `{arr_str}`\n'
         f'Sensor status: {status}'
+        f'{link_line}'
     )
     payload = json.dumps({'text': text, 'mrkdwn': True}).encode()
     req = urllib.request.Request(
@@ -108,6 +117,7 @@ def poll_usgs_significant():
                     'lat': c[1],
                     'lon': c[0],
                     'depth': c[2] if len(c) > 2 else 0,
+                    'event_id': eid,
                 }
                 t_str = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(event['time']))
                 exp_arr = _expected_p_arrival(event['lat'], event['lon'], event['time'])
