@@ -93,3 +93,5 @@ body.fs-mode #fs-overlay{display:block}
 .fso-bar{height:3px;border-radius:2px;background:#21262d;margin-top:2px;margin-bottom:6px}
 .fso-bar-fill{height:100%;border-radius:2px}
 .fso-det{margin-top:8px;border-top:1px solid #21262d;padding-top:8px}
+#map-legend{position:absolute;bottom:30px;left:10px;z-index:400;background:rgba(13,17,23,0.8);border:1px solid #21262d;border-radius:4px;padding:6px 10px;font-size:10px;color:#8b949e;pointer-events:none;line-height:2;white-space:nowrap}
+#map-legend .leg-dot{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:middle;margin-right:5px}
