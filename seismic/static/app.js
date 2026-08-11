@@ -20,8 +20,8 @@ if(_mbToken){
 }
 let _satOn=false;
 const _satBtn=document.getElementById('sat-btn');
-_satBtn.addEventListener('click',()=>{
-  _satOn=!_satOn;
+function _applySat(on){
+  _satOn=on;
   if(_satOn){
     map.removeLayer(_darkLayer);
     _satBase.addTo(map);
@@ -29,13 +29,15 @@ _satBtn.addEventListener('click',()=>{
     _satBtn.style.color='#58a6ff';
     _satBtn.style.borderColor='#58a6ff';
   } else {
-    map.removeLayer(_satBase);
-    if(_satLabels)map.removeLayer(_satLabels);
-    _darkLayer.addTo(map);
+    if(map.hasLayer(_satBase))map.removeLayer(_satBase);
+    if(_satLabels&&map.hasLayer(_satLabels))map.removeLayer(_satLabels);
+    if(!map.hasLayer(_darkLayer))_darkLayer.addTo(map);
     _satBtn.style.color='#6e7681';
     _satBtn.style.borderColor='#30363d';
   }
-});
+}
+_satBtn.addEventListener('click',()=>{_applySat(!_satOn);_saveSettings({satOn:_satOn});});
+if(_loadSettings().satOn)_applySat(true);
 const staMarkers={}, detMarkers=[];
 let sCoords=window.SEISMIC_CONFIG.sCoords;
 let lastFlyTs=null, lastFlyLat=null, lastFlyLon=null, selectedDetTs=null, _pulseIv=null, _pulsePhase=0;
@@ -71,6 +73,24 @@ function _pollLogs(){
 setInterval(_pollLogs,1500);
 let filterConfirmed=false, filterMinMb=0, filterLocal=false, detDisplayLimit=20;
 const _mbPendingNotify=new Set(); // ts values awaiting mb before firing desktop notification
+// Persist settings to localStorage
+const _SETTINGS_KEY='seismic_settings';
+function _loadSettings(){
+  try{return JSON.parse(localStorage.getItem(_SETTINGS_KEY)||'{}');}catch(e){return {};}
+}
+function _saveSettings(patch){
+  try{
+    const s=_loadSettings();
+    localStorage.setItem(_SETTINGS_KEY,JSON.stringify(Object.assign(s,patch)));
+  }catch(e){}
+}
+// Apply persisted settings (URL params override below if present)
+(()=>{
+  const s=_loadSettings();
+  if(s.filterConfirmed!=null)filterConfirmed=!!s.filterConfirmed;
+  if(s.filterMinMb!=null)filterMinMb=parseFloat(s.filterMinMb)||0;
+  if(s.filterLocal!=null)filterLocal=!!s.filterLocal;
+})();
 // Read initial state from URL params
 const _deepLinkTs=(()=>{
   const p=new URLSearchParams(window.location.search);
@@ -136,7 +156,7 @@ function showMoreDets(){detDisplayLimit+=50;}
     detDisplayLimit=100;
     btn.style.color=filterConfirmed?'#3fb950':'#6e7681';
     btn.style.borderColor=filterConfirmed?'#3fb950':'#30363d';
-    _syncFiltersToUrl();update();
+    _syncFiltersToUrl();_saveSettings({filterConfirmed});update();
   });
   const localBtn=document.getElementById('filter-local-btn');
   if(localBtn) localBtn.addEventListener('click',()=>{
@@ -144,7 +164,7 @@ function showMoreDets(){detDisplayLimit+=50;}
     detDisplayLimit=100;
     localBtn.style.color=filterLocal?'#d29922':'#6e7681';
     localBtn.style.borderColor=filterLocal?'#d29922':'#30363d';
-    _syncFiltersToUrl();update();
+    _syncFiltersToUrl();_saveSettings({filterLocal});update();
   });
   const mbSel=document.getElementById('mb-filter-sel');
   if(mbSel) mbSel.addEventListener('change',()=>{
@@ -152,7 +172,7 @@ function showMoreDets(){detDisplayLimit+=50;}
     detDisplayLimit=100;
     mbSel.style.color=filterMinMb>0?'#58a6ff':'#8b949e';
     mbSel.style.borderColor=filterMinMb>0?'#58a6ff':'#30363d';
-    _syncFiltersToUrl();update();
+    _syncFiltersToUrl();_saveSettings({filterMinMb});update();
   });
   // Apply initial visual state to match actual filter values (possibly from URL params)
   if(btn){btn.style.color=filterConfirmed?'#3fb950':'#6e7681';btn.style.borderColor=filterConfirmed?'#3fb950':'#30363d';}
@@ -281,17 +301,21 @@ function flyToEpi(lat,lon,ts){
   history.replaceState(null,'',window.location.pathname+(params.toString()?'?'+params.toString():''));
 }
 // audio alert
-let audioEnabled=true;
-let desktopNotifEnabled=false;
-let notifMinMb=0;
+const _initS=_loadSettings();
+let audioEnabled=_initS.audioEnabled!=null?!!_initS.audioEnabled:true;
+let desktopNotifEnabled=false; // never auto-enable on load (requires user gesture for permission)
+let notifMinMb=_initS.notifMinMb!=null?parseFloat(_initS.notifMinMb)||0:0;
 let lastDetTs=null;
 let audioCtx=null;
 const muteBtn=document.getElementById('mute-btn');
+muteBtn.textContent=audioEnabled?'🔔 on':'🔕 off';
+muteBtn.style.color=audioEnabled?'#8b949e':'#6e7681';
 muteBtn.addEventListener('click',()=>{
   audioEnabled=!audioEnabled;
   muteBtn.textContent=audioEnabled?'🔔 on':'🔕 off';
   muteBtn.style.color=audioEnabled?'#8b949e':'#6e7681';
   if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  _saveSettings({audioEnabled});
 });
 const notifBtn=document.getElementById('notif-btn');
 notifBtn.addEventListener('click',async()=>{
@@ -310,7 +334,17 @@ notifBtn.addEventListener('click',async()=>{
   }
 });
 const notifMbSel=document.getElementById('notif-mb-sel');
-notifMbSel.addEventListener('change',()=>{notifMinMb=parseFloat(notifMbSel.value)||0;});
+if(notifMinMb>0){
+  notifMbSel.value=notifMinMb.toFixed(1);
+  notifMbSel.style.color='#58a6ff';
+  notifMbSel.style.borderColor='#58a6ff';
+}
+notifMbSel.addEventListener('change',()=>{
+  notifMinMb=parseFloat(notifMbSel.value)||0;
+  notifMbSel.style.color=notifMinMb>0?'#58a6ff':'#6e7681';
+  notifMbSel.style.borderColor=notifMinMb>0?'#58a6ff':'#30363d';
+  _saveSettings({notifMinMb});
+});
 function _notifMbOk(mb){return notifMinMb===0||(mb!=null&&mb>=notifMinMb);}
 function playDetectionAlert(mb){
   if(!audioEnabled||!_notifMbOk(mb))return;
