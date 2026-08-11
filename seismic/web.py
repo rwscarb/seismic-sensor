@@ -182,7 +182,7 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
 const staMarkers={}, detMarkers=[];
 let sCoords=%(station_coords_json)s;
 let lastFlyTs=null, selectedDetTs=null, _pulseIv=null, _pulsePhase=0;
-let filterConfirmed=false, filterMinMb=0, filterLocal=false, detDisplayLimit=20;
+let filterConfirmed=true, filterMinMb=5.0, filterLocal=true, detDisplayLimit=20;
 // fault overlay — lazy loaded from GEM Global Active Faults dataset
 let _faultLayer=null, _faultLoading=false, _faultOn=false;
 const _FAULT_URL='https://raw.githubusercontent.com/GEMScienceTools/gem-global-active-faults/master/geojson/gem_active_faults.geojson';
@@ -240,6 +240,10 @@ function showMoreDets(){detDisplayLimit+=50;}
     mbSel.style.borderColor=filterMinMb>0?'#58a6ff':'#30363d';
     update();
   });
+  // Apply initial visual state to match default filter values
+  if(btn){btn.style.color='#3fb950';btn.style.borderColor='#3fb950';}
+  if(localBtn){localBtn.style.color='#d29922';localBtn.style.borderColor='#d29922';}
+  if(mbSel){mbSel.value='5.0';mbSel.style.color='#58a6ff';mbSel.style.borderColor='#58a6ff';}
 })();
 function confColor(c){return c>=0.835?'#3fb950':c>=0.5?'#d29922':'#6e7681'}
 function fmtAge(ts){const s=Math.round(Date.now()/1000-ts);return s<60?s+'s':s<3600?Math.round(s/60)+'m':Math.round(s/3600)+'h'}
