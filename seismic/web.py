@@ -336,6 +336,13 @@ function flyToEpi(lat,lon,ts){
   map.getPane('overlayPane').style.visibility='hidden';
   map.flyTo([lat,lon],5,{duration:1.0,easeLinearity:0.5});
   map.once('moveend',()=>{map.getPane('overlayPane').style.visibility='';applyMarkerSelection();});
+  // Update URL so this view is bookmarkable/shareable
+  const row=ts?document.querySelector(`.det[data-ts="${CSS.escape(ts)}"]`):null;
+  const unixTs=row?row.dataset.unixTs:null;
+  const params=new URLSearchParams(window.location.search);
+  if(unixTs){params.set('det',Math.round(unixTs));}else{params.delete('det');}
+  const newUrl=window.location.pathname+(params.toString()?'?'+params.toString():'');
+  history.replaceState(null,'',newUrl);
 }
 // audio alert
 let audioEnabled=true;
