@@ -275,6 +275,8 @@ _faultsBtn.addEventListener('click',async()=>{
   }catch(e){_faultOn=false;alert('Failed to load fault data: '+e.message);}
   _faultLoading=false;_setFaultBtnState();
 });
+// Load faults on by default
+_faultsBtn.click();
 function showMoreDets(){detDisplayLimit+=50;}
 (()=>{
   const btn=document.getElementById('filter-btn');
@@ -297,14 +299,14 @@ function showMoreDets(){detDisplayLimit+=50;}
   if(mbSel) mbSel.addEventListener('change',()=>{
     filterMinMb=parseFloat(mbSel.value)||0;
     detDisplayLimit=100;
-    mbSel.style.color=filterMinMb>0?'#58a6ff':'#6e7681';
+    mbSel.style.color=filterMinMb>0?'#58a6ff':'#8b949e';
     mbSel.style.borderColor=filterMinMb>0?'#58a6ff':'#30363d';
     _syncFiltersToUrl();update();
   });
   // Apply initial visual state to match actual filter values (possibly from URL params)
   if(btn){btn.style.color=filterConfirmed?'#3fb950':'#6e7681';btn.style.borderColor=filterConfirmed?'#3fb950':'#30363d';}
   if(localBtn){localBtn.style.color=filterLocal?'#d29922':'#6e7681';localBtn.style.borderColor=filterLocal?'#d29922':'#30363d';}
-  if(mbSel){mbSel.value=filterMinMb>0?String(filterMinMb):'0';mbSel.style.color=filterMinMb>0?'#58a6ff':'#6e7681';mbSel.style.borderColor=filterMinMb>0?'#58a6ff':'#30363d';}
+  if(mbSel){if(filterMinMb>0){mbSel.value=String(filterMinMb);}else{mbSel.selectedIndex=0;}mbSel.style.color=filterMinMb>0?'#58a6ff':'#8b949e';mbSel.style.borderColor=filterMinMb>0?'#58a6ff':'#30363d';}
 })();
 function confColor(c){return c>=0.835?'#3fb950':c>=0.5?'#d29922':'#6e7681'}
 function fmtAge(ts){const s=Math.round(Date.now()/1000-ts);return s<60?s+'s':s<3600?Math.round(s/60)+'m':Math.round(s/3600)+'h'}
@@ -698,7 +700,7 @@ update();setInterval(update,3000);
     const mbSel=document.getElementById('mb-filter-sel');
     if(btn){btn.style.color='#6e7681';btn.style.borderColor='#30363d';}
     if(localBtn){localBtn.style.color='#6e7681';localBtn.style.borderColor='#30363d';}
-    if(mbSel){mbSel.value='0';mbSel.style.color='#6e7681';mbSel.style.borderColor='#30363d';}
+    if(mbSel){mbSel.selectedIndex=0;mbSel.style.color='#8b949e';mbSel.style.borderColor='#30363d';}
   };
   setTimeout(_dlInit,100);
   let attempts=0;
@@ -964,4 +966,4 @@ def start_web_server():
         name='web-ui',
     )
     t.start()
-    print(f"Web UI: http://0.0.0.0:{WEB_PORT}", flush=True)
+    print(f"Web UI: http:
