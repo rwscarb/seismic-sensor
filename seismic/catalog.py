@@ -179,20 +179,34 @@ def _append_calibration(det_unix, catalog_event):
 
 
 def report_usgs_deferred(det_unix, p_arrivals):
-    """Thread: queries USGS ~10s after detection, then EMSC if no match."""
-    time.sleep(10)
-    event = query_usgs_event(det_unix, p_arrivals)
+    """Thread: polls USGS for up to 5 min (rapid retries for EEW), then EMSC."""
+    from seismic.eew import fire_eew_alert  # noqa: PLC0415
+
+    # Rapid-poll: retry every 20s for up to 5 minutes so EEW fires as soon as
+    # USGS publishes a rapid location (typically 2–5 min after seismic origin).
+    _POLL_INTERVAL = 20
+    _POLL_TIMEOUT  = 300
+    t_start = time.time()
+
+    time.sleep(10)  # initial wait
+
+    while time.time() - t_start < _POLL_TIMEOUT:
+        event = query_usgs_event(det_unix, p_arrivals)
+        ts = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+        if event:
+            event['source'] = 'usgs'
+            ns = 'N' if event['lat'] >= 0 else 'S'
+            ew = 'E' if event['lon'] >= 0 else 'W'
+            print(f"  [usgs {ts}] M{event['mag']}{event['magType']} — {event['place']}", flush=True)
+            print(f"  [usgs {ts}] {abs(event['lat']):.2f}°{ns} {abs(event['lon']):.2f}°{ew}  "
+                  f"depth={event['depth']:.0f}km", flush=True)
+            sensor_state.update_usgs(det_unix, event)
+            _append_calibration(det_unix, event)
+            fire_eew_alert(det_unix, event)
+            return
+        time.sleep(_POLL_INTERVAL)
+
     ts = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
-    if event:
-        event['source'] = 'usgs'
-        ns = 'N' if event['lat'] >= 0 else 'S'
-        ew = 'E' if event['lon'] >= 0 else 'W'
-        print(f"  [usgs {ts}] M{event['mag']}{event['magType']} — {event['place']}", flush=True)
-        print(f"  [usgs {ts}] {abs(event['lat']):.2f}°{ns} {abs(event['lon']):.2f}°{ew}  "
-              f"depth={event['depth']:.0f}km", flush=True)
-        sensor_state.update_usgs(det_unix, event)
-        _append_calibration(det_unix, event)
-        return
     print(f"  [usgs {ts}] no USGS match (M{USGS_MIN_MAG}+ in window) — trying EMSC", flush=True)
     event = query_emsc_event(det_unix, p_arrivals)
     ts = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
@@ -204,6 +218,7 @@ def report_usgs_deferred(det_unix, p_arrivals):
               f"depth={event['depth']:.0f}km", flush=True)
         sensor_state.update_usgs(det_unix, event)
         _append_calibration(det_unix, event)
+        fire_eew_alert(det_unix, event)
     else:
         print(f"  [emsc {ts}] no EMSC match (M{EMSC_MIN_MAG}+ European window)", flush=True)
         sensor_state.update_usgs(det_unix, None)
