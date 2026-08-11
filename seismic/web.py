@@ -204,7 +204,7 @@ const _logEl=document.getElementById('event-log');
 let _logSeen=new Set();
 function _classifyLog(msg){
   if(/CANDIDATE|CONSENSUS|DETECTED/.test(msg))return 'elog-det';
-  if(/usgs|emsc|USGS|EMSC|M[0-9]\.[0-9].*—/.test(msg))return 'elog-usgs';
+  if(/usgs|emsc|USGS|EMSC|M[0-9]\\.[0-9].*—/.test(msg))return 'elog-usgs';
   if(/conf=|mag=|station/.test(msg))return 'elog-sta';
   return 'elog-info';
 }
@@ -213,7 +213,7 @@ function _pollLogs(){
     const entries=d.entries||[];
     const atBottom=_logEl.scrollHeight-_logEl.scrollTop<=_logEl.clientHeight+4;
     // strip leading ISO timestamp bracket if present: "[2026-08-11T04:29:16Z] msg" → "msg"
-    const clean=s=>s.replace(/^\[?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\]?\s*/,'');
+    const clean=s=>s.replace(/^\\[?\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z\\]?\\s*/,'');
     _logEl.innerHTML=entries.slice(-60).map(e=>`<div class="elog ${_classifyLog(e.msg)}">${e.t} ${clean(e.msg)}</div>`).join('');
     if(atBottom)_logEl.scrollTop=_logEl.scrollHeight;
   }).catch(()=>{});
