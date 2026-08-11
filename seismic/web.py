@@ -670,7 +670,7 @@ update();setInterval(update,3000);
   const target=parseFloat(detTs);
   let attempts=0;
   const tryHighlight=()=>{
-    const rows=document.querySelectorAll('.det-row');
+    const rows=document.querySelectorAll('.det[data-unix-ts]');
     for(const row of rows){
       if(Math.abs((parseFloat(row.dataset.unixTs)||0)-target)<2){
         row.scrollIntoView({behavior:'smooth',block:'center'});
