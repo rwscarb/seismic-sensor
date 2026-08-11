@@ -3,7 +3,7 @@ import threading
 import time
 
 from seismic.config import (
-    WEB_PORT, THRESHOLD, N_CONSENSUS, STATIONS, SEEDLINK_SERVER,
+    WEB_PORT, THRESHOLD, N_CONSENSUS, STATIONS, ALL_STATIONS, SEEDLINK_SERVER,
     USGS_MIN_MAG, EMSC_MIN_MAG, UMAMI_SITE_ID, LOC_MIN_STA,
     CONSENSUS_WINDOW, USGS_SIG_MIN_MAG, SLACK_SIGNING_SECRET,
     SERVER_START_TIME, _LOG_BUF, _LOG_LOCK,
@@ -773,7 +773,7 @@ def start_web_server():
 
     coords_json = json.dumps({k: list(v) for k, v in station_coords.items()})
     sta_list = ', '.join(f"{n}.{s}" for n, s in STATIONS)
-    cfg_text = f"threshold {THRESHOLD} | {N_CONSENSUS}/{len(STATIONS)} consensus | {CONSENSUS_WINDOW:.0f}s window"
+    cfg_text = f"threshold {THRESHOLD} | {N_CONSENSUS}/{len(ALL_STATIONS)} consensus | {CONSENSUS_WINDOW:.0f}s window"
     app_title = f"{sta_list} | fra"
     html = (
         _WEB_HTML
