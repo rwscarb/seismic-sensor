@@ -966,4 +966,4 @@ def start_web_server():
         name='web-ui',
     )
     t.start()
-    print(f"Web UI: http:
+    print(f"Web UI: http://0.0.0.0:{WEB_PORT}", flush=True)
