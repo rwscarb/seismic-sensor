@@ -6,7 +6,7 @@ from seismic.config import (
     WEB_PORT, THRESHOLD, N_CONSENSUS, STATIONS, ALL_STATIONS, SEEDLINK_SERVER,
     USGS_MIN_MAG, EMSC_MIN_MAG, UMAMI_SITE_ID, LOC_MIN_STA,
     CONSENSUS_WINDOW, USGS_SIG_MIN_MAG, SLACK_SIGNING_SECRET,
-    SERVER_START_TIME, _LOG_BUF, _LOG_LOCK,
+    SERVER_START_TIME, _LOG_BUF, _LOG_LOCK, MAPBOX_TOKEN,
 )
 from seismic.localize import station_coords, locate_epicenter
 from seismic.state import sensor_state
@@ -69,6 +69,7 @@ def start_web_server():
             emsc_min_mag=EMSC_MIN_MAG,
             umami_id=UMAMI_SITE_ID,
             station_coords_json=coords_json,
+            mapbox_token=MAPBOX_TOKEN,
         )
 
     @app.route('/health')

@@ -13,7 +13,8 @@ window.SEISMIC_CONFIG={
   threshold:{{ threshold }},
   usgsMag:{{ usgs_min_mag }},
   emscMag:{{ emsc_min_mag }},
-  sCoords:{{ station_coords_json|safe }}
+  sCoords:{{ station_coords_json|safe }},
+  mapboxToken:{{ mapbox_token|tojson }}
 };
 </script>
 <script defer src="//u.fib896.com/script.js" data-website-id="{{ umami_id }}"></script>

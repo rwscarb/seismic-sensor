@@ -1,13 +1,23 @@
 const map = L.map('map', {zoomControl:false}).setView([45,10],2);
 const _darkLayer=L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
   {attribution:'&copy; OSM &copy; CARTO',subdomains:'abcd',maxZoom:19}).addTo(map);
-// Satellite layers (ESRI — no API key required)
-const _satBase=L.tileLayer(
-  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-  {attribution:'&copy; Esri, Maxar, Earthstar Geographics',maxZoom:19});
-const _satLabels=L.tileLayer(
-  'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-  {attribution:'',maxZoom:19,opacity:0.85});
+// Satellite layer — Mapbox satellite-streets when token present, ESRI fallback
+const _mbToken=window.SEISMIC_CONFIG.mapboxToken;
+let _satBase, _satLabels;
+if(_mbToken){
+  _satBase=L.tileLayer(
+    `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/256/{z}/{x}/{y}@2x?access_token=${_mbToken}`,
+    {attribution:'&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; OpenStreetMap',
+     maxZoom:20,tileSize:256});
+  _satLabels=null; // labels are baked into the satellite-streets style
+} else {
+  _satBase=L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    {attribution:'&copy; Esri, Maxar, Earthstar Geographics',maxZoom:19});
+  _satLabels=L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+    {attribution:'',maxZoom:19,opacity:0.85});
+}
 let _satOn=false;
 const _satBtn=document.getElementById('sat-btn');
 _satBtn.addEventListener('click',()=>{
@@ -15,12 +25,12 @@ _satBtn.addEventListener('click',()=>{
   if(_satOn){
     map.removeLayer(_darkLayer);
     _satBase.addTo(map);
-    _satLabels.addTo(map);
+    if(_satLabels)_satLabels.addTo(map);
     _satBtn.style.color='#58a6ff';
     _satBtn.style.borderColor='#58a6ff';
   } else {
     map.removeLayer(_satBase);
-    map.removeLayer(_satLabels);
+    if(_satLabels)map.removeLayer(_satLabels);
     _darkLayer.addTo(map);
     _satBtn.style.color='#6e7681';
     _satBtn.style.borderColor='#30363d';

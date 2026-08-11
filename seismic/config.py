@@ -75,6 +75,7 @@ USGS_SIG_MIN_MAG = float(os.environ.get('USGS_SIG_MIN_MAG', '5.5'))      # min m
 TELE_MATCH_WINDOW = float(os.environ.get('TELE_MATCH_WINDOW', '300.0'))
 SLACK_SIGNING_SECRET = os.environ.get('SLACK_SIGNING_SECRET', '')    # Slack app signing secret
 APP_URL = os.environ.get('APP_URL', '').rstrip('/')                   # public base URL for deep links
+MAPBOX_TOKEN = os.environ.get('MAPBOX_TOKEN', '')                     # optional: Mapbox public token for satellite
 
 # Register secrets for log scrubbing (must come after all secrets are read)
 _SCRUB_VALS.extend([v for v in [SLACK_WEBHOOK_URL, SLACK_SIGNING_SECRET] if v])
