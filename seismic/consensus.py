@@ -172,5 +172,5 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
                     suppressed_mag_count[0] = 0
                     suppressed_mag_last_report[0] = now
             else:
-                print(f"[{ts}] {key}  conf={conf:.3f}  mag={fmt_mag(mag_est)}", flush=True)
+                print(f"[{ts}] {key:<8}  conf={conf:.3f}  mag={fmt_mag(mag_est):<5}", flush=True)
             station_status[key] = now

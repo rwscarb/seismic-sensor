@@ -220,7 +220,7 @@ function _pollLogs(){
   }).catch(()=>{});
 }
 setInterval(_pollLogs,1500);
-let filterConfirmed=true, filterMinMb=5.0, filterLocal=true, detDisplayLimit=20;
+let filterConfirmed=true, filterMinMb=0, filterLocal=true, detDisplayLimit=20;
 // Read initial state from URL params
 const _deepLinkTs=(()=>{
   const p=new URLSearchParams(window.location.search);
