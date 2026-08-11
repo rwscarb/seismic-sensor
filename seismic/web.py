@@ -90,7 +90,7 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 #map{height:100%;border-radius:4px;background:#000}
 #map-wrap{position:relative;border-radius:4px;overflow:hidden;min-height:0}
 #event-log{position:absolute;bottom:24px;right:10px;z-index:400;width:480px;max-height:200px;overflow-y:auto;pointer-events:auto;background:rgba(13,17,23,0.55);border:1px solid #21262d;border-radius:4px;padding:4px 0}
-#event-log .elog{font-size:10.5px;font-family:monospace;color:#8b949e;padding:1px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.5}
+#event-log .elog{font-size:10.5px;font-family:monospace;color:#8b949e;padding:1px 8px;white-space:pre-wrap;word-break:break-all;line-height:1.5}
 #event-log .elog.elog-det{color:#f85149;border-left:2px solid #f85149;padding-left:6px}
 #event-log .elog.elog-usgs{color:#3fb950;border-left:2px solid #3fb950;padding-left:6px}
 #event-log .elog.elog-sta{color:#8b949e}
@@ -212,7 +212,9 @@ function _pollLogs(){
   fetch('/api/logs').then(r=>r.json()).then(d=>{
     const entries=d.entries||[];
     const atBottom=_logEl.scrollHeight-_logEl.scrollTop<=_logEl.clientHeight+4;
-    _logEl.innerHTML=entries.slice(-60).map(e=>`<div class="elog ${_classifyLog(e.msg)}">${e.t} ${e.msg}</div>`).join('');
+    // strip leading ISO timestamp bracket if present: "[2026-08-11T04:29:16Z] msg" → "msg"
+    const clean=s=>s.replace(/^\[?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\]?\s*/,'');
+    _logEl.innerHTML=entries.slice(-60).map(e=>`<div class="elog ${_classifyLog(e.msg)}">${e.t} ${clean(e.msg)}</div>`).join('');
     if(atBottom)_logEl.scrollTop=_logEl.scrollHeight;
   }).catch(()=>{});
 }
