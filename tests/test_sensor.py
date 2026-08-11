@@ -1,6 +1,6 @@
 """
 Unit tests for seismic-sensor — no torch/obspy required.
-Stubs heavy imports before loading sensor module functions directly.
+Imports from the seismic/ package submodules; stubs heavy deps before import.
 """
 import sys
 import math
@@ -82,7 +82,21 @@ os.environ.setdefault('CHECKPOINT_DIR', '/tmp')
 # Add seismic-sensor/ to path so we can import sensor
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-import sensor  # noqa: E402  (imported after stubs)
+from seismic.localize import haversine_km, p_travel_time_s, locate_epicenter, station_coords
+from seismic.config import fmt_mag
+from seismic.state import SensorState, DetectionSnap
+
+# Build a 'sensor' namespace so test bodies need no changes
+import types as _types
+sensor = _types.SimpleNamespace(
+    haversine_km=haversine_km,
+    p_travel_time_s=p_travel_time_s,
+    locate_epicenter=locate_epicenter,
+    station_coords=station_coords,
+    fmt_mag=fmt_mag,
+    SensorState=SensorState,
+    DetectionSnap=DetectionSnap,
+)
 
 
 class TestHaversine(unittest.TestCase):
