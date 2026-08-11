@@ -648,6 +648,14 @@ function update(){
       m.on('click',(e)=>{
         L.DomEvent.stopPropagation(e);
         if(_pinnedMarker===m){_unpinMarker();}else{_pinMarker(m);}
+        // Select and scroll to the matching detection row
+        const entry=detMarkers.find(x=>x.m===m);
+        if(entry){
+          selectedDetTs=entry.ts;
+          applyRowSelection();
+          const row=document.querySelector(`.det[data-ts="${CSS.escape(entry.ts)}"]`);
+          if(row)row.scrollIntoView({behavior:'smooth',block:'center'});
+        }
       });
       m.on('mouseout',()=>{if(_pinnedMarker===m)m.openTooltip();});
       kept.push({m,ts:det.ts,r,lat:la,lon:lo});
