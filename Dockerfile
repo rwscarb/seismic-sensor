@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
  && pip install --no-cache-dir obspy numpy scipy flask rich seisbench
 
 COPY sensor.py .
+COPY seismic/ ./seismic/
 
 # Checkpoints baked in (~900KB total) for Fly.io deploy.
 # For local docker-compose, the volume mount overrides this directory.

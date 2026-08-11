@@ -25,7 +25,7 @@ primary_region = 'fra'
 
 [deploy]
   strategy        = "rolling"
-  wait_timeout    = "120s"
+  wait_timeout    = "300s"
   max_unavailable = 0
 
 [http_service]
