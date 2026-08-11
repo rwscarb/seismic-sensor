@@ -584,11 +584,14 @@ function update(){
     const epiDets=d.detections.filter(det=>!det.teleseismic&&(det.epicenter||(det.usgs&&det.usgs.lat!=null)));
     const epiTsSet=new Set(epiDets.map(det=>det.ts));
     const keptTs=new Set();
-    // remove stale or outdated markers (USGS coords arrived after sensor-only placement)
-    detMarkers.forEach(({m,ts,hasUsgs})=>{
+    // remove stale markers or those whose coordinates have changed (watcher override)
+    detMarkers.forEach(({m,ts,lat,lon})=>{
       const det=epiDets.find(d=>d.ts===ts);
-      const nowHasUsgs=det&&det.usgs&&det.usgs.lat!=null;
-      if(!epiTsSet.has(ts)||(nowHasUsgs&&!hasUsgs)){map.removeLayer(m);}
+      const usgsC=det&&det.usgs&&det.usgs.lat!=null;
+      const newLat=usgsC?det.usgs.lat:det.epicenter?det.epicenter[0]:null;
+      const newLon=usgsC?det.usgs.lon:det.epicenter?det.epicenter[1]:null;
+      const moved=newLat!=null&&(Math.abs(newLat-lat)>0.5||Math.abs(newLon-lon)>0.5);
+      if(!epiTsSet.has(ts)||moved){map.removeLayer(m);}
       else{keptTs.add(ts);}
     });
     const kept=detMarkers.filter(({ts})=>keptTs.has(ts));
@@ -619,7 +622,7 @@ function update(){
         if(_pinnedMarker===m){_unpinMarker();}else{_pinMarker(m);}
       });
       m.on('mouseout',()=>{if(_pinnedMarker===m)m.openTooltip();});
-      kept.push({m,ts:det.ts,r,hasUsgs:usgsCoords});
+      kept.push({m,ts:det.ts,r,lat:la,lon:lo});
     });
     detMarkers.length=0;kept.forEach(x=>detMarkers.push(x));
     if(markersChanged)applyMarkerSelection();
