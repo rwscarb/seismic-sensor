@@ -396,9 +396,8 @@ function flyToEpi(lat,lon,ts){
   selectedDetTs=ts||null;
   applyRowSelection();
   applyMarkerSelection();
-  map.getPane('overlayPane').style.visibility='hidden';
   map.flyTo([lat,lon],5,{duration:1.0,easeLinearity:0.5});
-  map.once('moveend',()=>{map.getPane('overlayPane').style.visibility='';applyMarkerSelection();});
+  map.once('moveend',()=>{applyMarkerSelection();});
   // Update URL so this view is bookmarkable/shareable (includes filter state)
   const row=ts?document.querySelector(`.det[data-ts="${CSS.escape(ts)}"]`):null;
   const unixTs=row?row.dataset.unixTs:null;
