@@ -87,8 +87,9 @@ def estimate_mb(key, p_arrival_unix, epicenter_latlon):
     return round(mb, 1), ('approx' if approx else None), A
 
 
-def report_mb_deferred(stations_fired, p_arrivals, epicenter_latlon, det_unix):
-    """Thread: waits MB_DELAY_S then measures mb from each station's ring buffer."""
+def report_mb_deferred(stations_fired, p_arrivals, epicenter_latlon, det_unix,
+                       det_ts=None, det_conf=None):
+    """Thread: waits MB_DELAY_S then measures mb; fires Slack alert with result."""
     time.sleep(MB_DELAY_S)
     ts = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
     mbs = []
@@ -109,20 +110,25 @@ def report_mb_deferred(stations_fired, p_arrivals, epicenter_latlon, det_unix):
         else:
             print(f"  [mb {ts}] {k}: skipped ({tag})", flush=True)
 
-    if not mbs:
-        return
-    mb_vals = [m for m, _, _ in mbs]
-    tags = [t for _, t, _ in mbs]
-    amp_vals = [a for _, _, a in mbs]
-    consensus = float(np.median(mb_vals))
-    approx = all(t == 'approx' for t in tags)
-    # If no epicenter and stations show large amplitude spread, source is likely local/regional
-    amp_ratio = max(amp_vals) / min(amp_vals) if len(amp_vals) > 1 and min(amp_vals) > 0 else 1.0
-    local_flag = approx and amp_ratio > 5.0
-    n = len(mb_vals)
-    approx_pfx = '~' if approx else ''
-    approx_sfx = ', Δ≈45°' if approx else ''
-    local_sfx = f', likely local amp_ratio={amp_ratio:.1f}' if local_flag else ''
-    label = f"({approx_pfx}{n} stations, IASPEI{approx_sfx}{local_sfx})"
-    print(f"  [mb {ts}] mb={approx_pfx}{consensus:.1f}  {label}", flush=True)
-    sensor_state.update_mb(det_unix, consensus, approx=approx, local=local_flag)
+    mb_result = None
+    if mbs:
+        mb_vals = [m for m, _, _ in mbs]
+        tags = [t for _, t, _ in mbs]
+        amp_vals = [a for _, _, a in mbs]
+        consensus = float(np.median(mb_vals))
+        approx = all(t == 'approx' for t in tags)
+        # If no epicenter and stations show large amplitude spread, source is likely local/regional
+        amp_ratio = max(amp_vals) / min(amp_vals) if len(amp_vals) > 1 and min(amp_vals) > 0 else 1.0
+        local_flag = approx and amp_ratio > 5.0
+        n = len(mb_vals)
+        approx_pfx = '~' if approx else ''
+        approx_sfx = ', Δ≈45°' if approx else ''
+        local_sfx = f', likely local amp_ratio={amp_ratio:.1f}' if local_flag else ''
+        label = f"({approx_pfx}{n} stations, IASPEI{approx_sfx}{local_sfx})"
+        print(f"  [mb {ts}] mb={approx_pfx}{consensus:.1f}  {label}", flush=True)
+        sensor_state.update_mb(det_unix, consensus, approx=approx, local=local_flag)
+        mb_result = consensus
+
+    if det_ts is not None and det_conf is not None:
+        from seismic.catalog import send_slack_alert  # noqa: PLC0415
+        send_slack_alert(det_ts, stations_fired, det_conf, epicenter_latlon, mb_result)

@@ -86,7 +86,7 @@ def send_slack_alert(ts, stations_fired, conf, epicenter=None, mag_est=None):
     import urllib.request
     sta_list = ' · '.join(sorted(stations_fired))
     epi_str = f'\nEpicenter: `{epicenter[0]:.2f}N {epicenter[1]:.2f}E`' if epicenter else ''
-    mag_str = f'\nMagnitude: `{fmt_mag(mag_est)}` _(sensor est.)_' if mag_est is not None else ''
+    mag_str = f'\nMagnitude: `mb {mag_est:.1f}` _(IASPEI est.)_' if mag_est is not None else ''
     text = (
         f'🌍 *Seismic Detection*\n'
         f'Time: `{ts}`\n'

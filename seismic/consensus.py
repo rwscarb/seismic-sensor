@@ -135,21 +135,15 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
             )
             sensor_state.add_detection(det_rec)
 
-            from seismic.catalog import send_slack_alert, report_usgs_deferred  # noqa: PLC0415
+            from seismic.catalog import report_usgs_deferred  # noqa: PLC0415
             from seismic.magnitude import report_mb_deferred  # noqa: PLC0415
-
-            threading.Thread(
-                target=send_slack_alert,
-                args=(ts, stations_fired, conf, epicenter_latlon, mag_consensus),
-                daemon=True,
-            ).start()
 
             reset_arrivals()
 
-            # Launch deferred mb + USGS lookups in background
+            # Launch deferred mb (fires Slack alert after magnitude is known)
             threading.Thread(
                 target=report_mb_deferred,
-                args=(set(stations_fired), refined_p, epicenter_latlon, now),
+                args=(set(stations_fired), refined_p, epicenter_latlon, now, ts, conf),
                 daemon=True,
             ).start()
             threading.Thread(
