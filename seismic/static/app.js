@@ -222,6 +222,7 @@ document.addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT'||e.target.isContentEditable)return;
   if(e.key==='ArrowLeft'){e.preventDefault();_navDet(-1);}
   else if(e.key==='ArrowRight'){e.preventDefault();_navDet(1);}
+  else if(e.key==='s'){_satBtn.click();}
 });
 let _pulseTs=null;
 // Zoom-scaled radius: full size at zoom ≥ 8, progressively smaller below that.
@@ -281,6 +282,8 @@ function flyToEpi(lat,lon,ts){
 }
 // audio alert
 let audioEnabled=true;
+let desktopNotifEnabled=false;
+let notifMinMb=0;
 let lastDetTs=null;
 let audioCtx=null;
 const muteBtn=document.getElementById('mute-btn');
@@ -290,8 +293,27 @@ muteBtn.addEventListener('click',()=>{
   muteBtn.style.color=audioEnabled?'#8b949e':'#6e7681';
   if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
 });
-function playDetectionAlert(){
-  if(!audioEnabled)return;
+const notifBtn=document.getElementById('notif-btn');
+notifBtn.addEventListener('click',async()=>{
+  if(!desktopNotifEnabled){
+    if(!('Notification' in window)){return;}
+    let perm=Notification.permission;
+    if(perm==='default')perm=await Notification.requestPermission();
+    if(perm!=='granted'){notifBtn.title='Browser blocked notifications';return;}
+    desktopNotifEnabled=true;
+    notifBtn.style.color='#58a6ff';
+    notifBtn.style.borderColor='#58a6ff';
+  } else {
+    desktopNotifEnabled=false;
+    notifBtn.style.color='#6e7681';
+    notifBtn.style.borderColor='#30363d';
+  }
+});
+const notifMbSel=document.getElementById('notif-mb-sel');
+notifMbSel.addEventListener('change',()=>{notifMinMb=parseFloat(notifMbSel.value)||0;});
+function _notifMbOk(mb){return notifMinMb===0||(mb!=null&&mb>=notifMinMb);}
+function playDetectionAlert(mb){
+  if(!audioEnabled||!_notifMbOk(mb))return;
   try{
     if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
     if(audioCtx.state==='suspended')audioCtx.resume();
@@ -308,11 +330,9 @@ function playDetectionAlert(){
   }catch(e){}
 }
 // browser desktop notification
-if('Notification' in window && Notification.permission==='default'){
-  Notification.requestPermission();
-}
 function showDesktopNotification(det){
-  if(!('Notification' in window)||Notification.permission!=='granted')return;
+  if(!desktopNotifEnabled||!('Notification' in window)||Notification.permission!=='granted')return;
+  if(!_notifMbOk(det.mb))return;
   const mbStr=det.mb_local?'local':det.mb_approx?`mb~${det.mb.toFixed(1)}`:`mb=${det.mb.toFixed(1)}`;
   const epiStr=det.epicenter?` · ${det.epicenter[0].toFixed(1)}°${det.epicenter[0]>=0?'N':'S'} ${Math.abs(det.epicenter[1]).toFixed(1)}°${det.epicenter[1]>=0?'E':'W'}`:'';
   new Notification('🌍 Seismic Detection',{
@@ -381,7 +401,7 @@ function update(){
     if(dets.length){
       const newest=dets[0];
       if(lastDetTs!==null && newest.ts!==lastDetTs){
-        playDetectionAlert();
+        playDetectionAlert(newest.mb);
         if(newest.mb!=null){showDesktopNotification(newest);}
         else{_mbPendingNotify.add(newest.ts);}
       }
