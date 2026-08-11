@@ -48,10 +48,9 @@ def _broadcast_op_return(commitment_hex: str) -> str | None:
     try:
         from bit import PrivateKey  # type: ignore
         key = PrivateKey(BTC_WIF)
-        # OP_RETURN payload: first 40 bytes of commitment (80 hex chars = 40 bytes)
-        payload = bytes.fromhex(commitment_hex[:80])
-        outputs = [(payload, 0, 'satoshi')]
-        tx_hash = key.send(outputs)
+        # OP_RETURN via bit's message= param (takes a string, encodes to bytes internally)
+        # 80 hex chars = 40 bytes of actual commitment data, within the 80-byte relay limit
+        tx_hash = key.send([], message=commitment_hex[:80])
         return tx_hash
     except Exception as e:
         print(f"  [btcvm] OP_RETURN broadcast failed: {e}", flush=True)
