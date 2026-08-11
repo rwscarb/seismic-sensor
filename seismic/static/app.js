@@ -550,16 +550,21 @@ function _updateBody(d){
       if(_btcBatch){
         // on-chain via daily Merkle batch
         const tip=`On-chain (daily batch) · block ${_btcBatch.block_height}\nmerkle root: ${_btcBatch.merkle_root||''}\ntx: ${_btcBatch.tx_hash}\n${_btcBatch.n} detections in batch`;
-        btcIcon=`<a class="det-usgs-icon" href="https://blockstream.info/tx/${encodeURIComponent(_btcBatch.tx_hash)}" target="_blank" rel="noopener" title="${escAttr(tip)}" style="text-decoration:none;color:#f7931a" onclick="event.stopPropagation()">₿</a>`;
+        const blockUrl=`https://blockstream.info/block/${encodeURIComponent(_btcBatch.block_hash)}`;
+        btcIcon=`<a class="det-usgs-icon" href="${blockUrl}" target="_blank" rel="noopener" title="${escAttr(tip)}" style="text-decoration:none;color:#f7931a" onclick="event.stopPropagation()">₿</a>`;
       } else if(_btcLedger&&_btcLedger.tx_hash){
         // v1 individual broadcast (legacy — on-chain but pre-batch scheme)
         const tip=`On-chain (v1 individual) · block ${_btcLedger.block_height}\ntx: ${_btcLedger.tx_hash}`;
-        btcIcon=`<a class="det-usgs-icon" href="https://blockstream.info/tx/${encodeURIComponent(_btcLedger.tx_hash)}" target="_blank" rel="noopener" title="${escAttr(tip)}" style="text-decoration:none;color:#f7931a;opacity:.65" onclick="event.stopPropagation()">₿</a>`;
+        const blockUrl=`https://blockstream.info/block/${encodeURIComponent(_btcLedger.block_hash)}`;
+        btcIcon=`<a class="det-usgs-icon" href="${blockUrl}" target="_blank" rel="noopener" title="${escAttr(tip)}" style="text-decoration:none;color:#f7931a;opacity:.65" onclick="event.stopPropagation()">₿</a>`;
       } else if(_btcLedger){
-        // ledger-only (batch pending)
+        // ledger-only (batch pending) — link to block for context even without tx
         const isConf=_btcLedger.label==='confirmed';
         const tip=`Ledger anchor (batch pending) · block ${_btcLedger.block_height}\ncommitment: ${_btcLedger.commitment||''}\n${isConf?'Catalog confirmed':'Raw detection'}`;
-        btcIcon=`<span class="det-usgs-icon" style="color:#a07830" title="${escAttr(tip)}">₿</span>`;
+        const blockUrl=_btcLedger.block_hash?`https://blockstream.info/block/${encodeURIComponent(_btcLedger.block_hash)}`:'';
+        btcIcon=blockUrl
+          ?`<a class="det-usgs-icon" href="${blockUrl}" target="_blank" rel="noopener" title="${escAttr(tip)}" style="text-decoration:none;color:#a07830" onclick="event.stopPropagation()">₿</a>`
+          :`<span class="det-usgs-icon" style="color:#a07830" title="${escAttr(tip)}">₿</span>`;
       }
       return sep+`<div class="det${selCls}${mutedCls}${verifCls}" data-ts="${det.ts}" data-unix-ts="${det.unix_ts}" ${rowClick} title="${escAttr(detTitle)}">
         <div class="det-row1"><span class="det-time">${tPart}</span><span class="det-age">${fmtAge(det.unix_ts)}</span></div>
