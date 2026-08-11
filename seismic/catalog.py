@@ -203,6 +203,8 @@ def report_usgs_deferred(det_unix, p_arrivals):
             sensor_state.update_usgs(det_unix, event)
             _append_calibration(det_unix, event)
             fire_eew_alert(det_unix, event)
+            from seismic.btcvm_anchor import anchor_confirmed  # noqa: PLC0415
+            anchor_confirmed(det_unix, event)
             return
         time.sleep(_POLL_INTERVAL)
 
@@ -219,6 +221,8 @@ def report_usgs_deferred(det_unix, p_arrivals):
         sensor_state.update_usgs(det_unix, event)
         _append_calibration(det_unix, event)
         fire_eew_alert(det_unix, event)
+        from seismic.btcvm_anchor import anchor_confirmed  # noqa: PLC0415
+        anchor_confirmed(det_unix, event)
     else:
         print(f"  [emsc {ts}] no EMSC match (M{EMSC_MIN_MAG}+ European window)", flush=True)
         sensor_state.update_usgs(det_unix, None)

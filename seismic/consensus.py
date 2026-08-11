@@ -135,6 +135,9 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
             )
             sensor_state.add_detection(det_rec)
 
+            from seismic.btcvm_anchor import anchor_detection  # noqa: PLC0415
+            anchor_detection(det_rec)
+
             from seismic.catalog import report_usgs_deferred  # noqa: PLC0415
             from seismic.magnitude import report_mb_deferred  # noqa: PLC0415
 

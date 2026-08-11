@@ -377,8 +377,15 @@ function showDesktopNotification(det){
   });
 }
 function update(){
-  fetch('/api/state').then(r=>r.json()).then(d=>{
+  fetch('/api/state').then(r=>{
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    return r.json();
+  }).then(d=>{
     document.getElementById('status-dot').style.background='';
+    try{_updateBody(d);}catch(e){console.error('[seismic] update error:',e);}
+  }).catch(()=>{document.getElementById('status-dot').style.background='#f85149'});
+}
+function _updateBody(d){
     const _now=new Date();
     const _localStr=_now.toLocaleTimeString('en',{timeZone:_activeTz(),hour:'2-digit',minute:'2-digit',second:'2-digit'})+' '+_tzAbbr();
     const _utcStr=_now.toLocaleTimeString('en',{timeZone:'UTC',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' UTC';
@@ -642,7 +649,6 @@ function update(){
         ${ld.epicenter?`<div style="color:#d29922">${ld.epicenter[0].toFixed(2)}N ${ld.epicenter[1].toFixed(2)}E</div>`:''}
         <div style="color:#a371f7;margin-top:2px">${usgsStr}</div>`;
     }
-  }).catch(()=>{document.getElementById('status-dot').style.background='#f85149'});
 }
 update();setInterval(update,3000);
 // Deep-link: ?det=<unix_ts> → highlight row, fly map to it, clear filters

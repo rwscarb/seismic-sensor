@@ -76,9 +76,12 @@ TELE_MATCH_WINDOW = float(os.environ.get('TELE_MATCH_WINDOW', '300.0'))
 SLACK_SIGNING_SECRET = os.environ.get('SLACK_SIGNING_SECRET', '')    # Slack app signing secret
 APP_URL = os.environ.get('APP_URL', '').rstrip('/')                   # public base URL for deep links
 MAPBOX_TOKEN = os.environ.get('MAPBOX_TOKEN', '')                     # optional: Mapbox public token for satellite
+BTCVM_LEDGER_PATH = os.environ.get('BTCVM_LEDGER_PATH', '/data/btcvm_ledger.jsonl')
+BTCVM_BROADCAST = os.environ.get('BTCVM_BROADCAST', '').lower() in ('1', 'true', 'yes')
+BTC_WIF = os.environ.get('BTC_WIF', '')                               # WIF key for optional OP_RETURN broadcast
 
 # Register secrets for log scrubbing (must come after all secrets are read)
-_SCRUB_VALS.extend([v for v in [SLACK_WEBHOOK_URL, SLACK_SIGNING_SECRET] if v])
+_SCRUB_VALS.extend([v for v in [SLACK_WEBHOOK_URL, SLACK_SIGNING_SECRET, BTC_WIF] if v])
 
 
 # Parse stations: "GE.APE,GE.MORC" → [('GE','APE'), ('GE','MORC')]
