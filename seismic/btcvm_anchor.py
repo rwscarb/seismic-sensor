@@ -113,6 +113,7 @@ def _anchor(det_data: dict, label: str) -> dict | None:
         commitment = _sha256((block_hash + det_hash).encode())
 
         entry = {
+            'scheme': 'v2-single',
             'label': label,
             'det_ts': det_data.get('ts'),
             'det_unix': det_data.get('unix_ts'),
@@ -168,6 +169,7 @@ def _daily_batch() -> None:
                 print(f"  [btcvm] OP_RETURN ok: {tx_hash}", flush=True)
 
         batch_entry = {
+            'scheme': 'v2-batch-merkle',
             'label': 'batch',
             'det_hashes': det_hashes,
             'merkle_root': root,
