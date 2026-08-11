@@ -182,6 +182,16 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
 const staMarkers={}, detMarkers=[];
 let sCoords=%(station_coords_json)s;
 let lastFlyTs=null, selectedDetTs=null, _pulseIv=null, _pulsePhase=0;
+let _pinnedMarker=null;
+function _pinMarker(m){
+  if(_pinnedMarker&&_pinnedMarker!==m)_pinnedMarker.closeTooltip();
+  _pinnedMarker=m;
+  m.openTooltip();
+}
+function _unpinMarker(){
+  if(_pinnedMarker){_pinnedMarker.closeTooltip();_pinnedMarker=null;}
+}
+map.on('click',()=>_unpinMarker());
 let filterConfirmed=true, filterMinMb=5.0, filterLocal=true, detDisplayLimit=20;
 // fault overlay — lazy loaded from GEM Global Active Faults dataset
 let _faultLayer=null, _faultLoading=false, _faultOn=false;
@@ -568,6 +578,11 @@ function update(){
         +'</div>';
       const m=L.circleMarker([la,lo],{radius:zoomR(r),color:'#c0392b',weight:1,fillColor:'#f85149',fillOpacity:.85})
         .bindTooltip(tipHtml,{sticky:false,direction:'top',className:'det-tip'}).addTo(map);
+      m.on('click',(e)=>{
+        L.DomEvent.stopPropagation(e);
+        if(_pinnedMarker===m){_unpinMarker();}else{_pinMarker(m);}
+      });
+      m.on('mouseout',()=>{if(_pinnedMarker===m)m.openTooltip();});
       kept.push({m,ts:det.ts,r});
     });
     detMarkers.length=0;kept.forEach(x=>detMarkers.push(x));
