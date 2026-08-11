@@ -3,7 +3,7 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
   {attribution:'&copy; OSM &copy; CARTO',subdomains:'abcd',maxZoom:19}).addTo(map);
 const staMarkers={}, detMarkers=[];
 let sCoords=window.SEISMIC_CONFIG.sCoords;
-let lastFlyTs=null, selectedDetTs=null, _pulseIv=null, _pulsePhase=0;
+let lastFlyTs=null, lastFlyLat=null, lastFlyLon=null, selectedDetTs=null, _pulseIv=null, _pulsePhase=0;
 let _pinnedMarker=null;
 function _pinMarker(m){
   if(_pinnedMarker&&_pinnedMarker!==m)_pinnedMarker.closeTooltip();
@@ -508,15 +508,22 @@ function update(){
     });
     detMarkers.length=0;kept.forEach(x=>detMarkers.push(x));
     if(markersChanged)applyMarkerSelection();
-    // flyTo newest non-teleseismic epicenter when it first appears (skip if deep link)
-    const newestEpi=dets.find(det=>det.epicenter&&!det.teleseismic);
-    if(!_deepLinkTs && newestEpi && newestEpi.ts!==lastFlyTs){
-      lastFlyTs=newestEpi.ts;
-      selectedDetTs=newestEpi.ts;
-      applyRowSelection();
-      const [la,lo]=newestEpi.epicenter;
-      map.flyTo([la,lo],5,{duration:1.0,easeLinearity:0.5});
-      map.once('moveend',()=>applyMarkerSelection());
+    // flyTo newest localized detection when it first appears or when USGS corrects
+    // sensor coords by >1° (skip if deep link active)
+    const newestEpi=dets.find(det=>!det.teleseismic&&(det.epicenter||(det.usgs&&det.usgs.lat!=null)));
+    if(!_deepLinkTs && newestEpi){
+      const usgsC=newestEpi.usgs&&newestEpi.usgs.lat!=null;
+      const la=usgsC?newestEpi.usgs.lat:newestEpi.epicenter[0];
+      const lo=usgsC?newestEpi.usgs.lon:newestEpi.epicenter[1];
+      const isNew=newestEpi.ts!==lastFlyTs;
+      const moved=lastFlyLat!=null&&(Math.abs(la-lastFlyLat)>1||Math.abs(lo-lastFlyLon)>1);
+      if(isNew||moved){
+        lastFlyTs=newestEpi.ts; lastFlyLat=la; lastFlyLon=lo;
+        selectedDetTs=newestEpi.ts;
+        applyRowSelection();
+        map.flyTo([la,lo],5,{duration:1.0,easeLinearity:0.5});
+        map.once('moveend',()=>applyMarkerSelection());
+      }
     }
     // fullscreen overlay: station list + latest detection
     const fsoSta=document.getElementById('fso-stations');
