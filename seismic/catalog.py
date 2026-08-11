@@ -3,7 +3,7 @@ import os
 import time
 
 from seismic.config import (
-    USGS_MIN_MAG, EMSC_MIN_MAG, SLACK_WEBHOOK_URL, fmt_mag,
+    USGS_MIN_MAG, EMSC_MIN_MAG, SLACK_WEBHOOK_URL, APP_URL, fmt_mag,
 )
 from seismic.localize import station_coords, haversine_km, p_travel_time_s
 from seismic.state import sensor_state
@@ -92,7 +92,7 @@ def send_slack_alert(ts, stations_fired, conf, epicenter=None, mag_est=None):
         f'Time: `{ts}`\n'
         f'Stations: `{sta_list}`\n'
         f'Confidence: `{conf:.3f}`{mag_str}{epi_str}\n'
-        f'<https://seismic-sensor.fly.dev|View dashboard>'
+        f'<{APP_URL or "https://seismic.fib896.com"}|View dashboard>'
     )
     payload = json.dumps({'text': text, 'mrkdwn': True}).encode()
     req = urllib.request.Request(
