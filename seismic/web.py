@@ -220,9 +220,30 @@ function _pollLogs(){
 }
 setInterval(_pollLogs,1500);
 let filterConfirmed=true, filterMinMb=5.0, filterLocal=true, detDisplayLimit=20;
-// If arriving via deep link, clear filters so target detection is always visible
-const _deepLinkTs=(()=>{const p=new URLSearchParams(window.location.search).get('det');return p?parseFloat(p):null;})();
-if(_deepLinkTs){filterConfirmed=false;filterMinMb=0;filterLocal=false;detDisplayLimit=500;}
+// Read initial state from URL params
+const _deepLinkTs=(()=>{
+  const p=new URLSearchParams(window.location.search);
+  const det=p.get('det');
+  const hasFilterParams=p.has('conf')||p.has('mb')||p.has('local');
+  if(p.has('conf'))filterConfirmed=p.get('conf')==='1';
+  if(p.has('mb'))filterMinMb=parseFloat(p.get('mb'))||0;
+  if(p.has('local'))filterLocal=p.get('local')==='1';
+  if(det){
+    // Slack deep link (no filter params) → clear all filters so target is always visible
+    if(!hasFilterParams){filterConfirmed=false;filterMinMb=0;filterLocal=false;}
+    detDisplayLimit=500;
+    return parseFloat(det);
+  }
+  return null;
+})();
+// Push current filter state into the URL (preserves shareable view)
+function _syncFiltersToUrl(){
+  const p=new URLSearchParams(window.location.search);
+  if(filterConfirmed){p.set('conf','1');}else{p.delete('conf');}
+  if(filterMinMb>0){p.set('mb',String(filterMinMb));}else{p.delete('mb');}
+  if(filterLocal){p.set('local','1');}else{p.delete('local');}
+  history.replaceState(null,'',window.location.pathname+(p.toString()?'?'+p.toString():''));
+}
 // fault overlay — lazy loaded from GEM Global Active Faults dataset
 let _faultLayer=null, _faultLoading=false, _faultOn=false;
 const _FAULT_URL='https://raw.githubusercontent.com/GEMScienceTools/gem-global-active-faults/master/geojson/gem_active_faults.geojson';
@@ -262,7 +283,7 @@ function showMoreDets(){detDisplayLimit+=50;}
     detDisplayLimit=100;
     btn.style.color=filterConfirmed?'#3fb950':'#6e7681';
     btn.style.borderColor=filterConfirmed?'#3fb950':'#30363d';
-    update();
+    _syncFiltersToUrl();update();
   });
   const localBtn=document.getElementById('filter-local-btn');
   if(localBtn) localBtn.addEventListener('click',()=>{
@@ -270,7 +291,7 @@ function showMoreDets(){detDisplayLimit+=50;}
     detDisplayLimit=100;
     localBtn.style.color=filterLocal?'#d29922':'#6e7681';
     localBtn.style.borderColor=filterLocal?'#d29922':'#30363d';
-    update();
+    _syncFiltersToUrl();update();
   });
   const mbSel=document.getElementById('mb-filter-sel');
   if(mbSel) mbSel.addEventListener('change',()=>{
@@ -278,14 +299,12 @@ function showMoreDets(){detDisplayLimit+=50;}
     detDisplayLimit=100;
     mbSel.style.color=filterMinMb>0?'#58a6ff':'#6e7681';
     mbSel.style.borderColor=filterMinMb>0?'#58a6ff':'#30363d';
-    update();
+    _syncFiltersToUrl();update();
   });
-  // Apply initial visual state to match default filter values (skip if deep link cleared filters)
-  if(!_deepLinkTs){
-    if(btn){btn.style.color='#3fb950';btn.style.borderColor='#3fb950';}
-    if(localBtn){localBtn.style.color='#d29922';localBtn.style.borderColor='#d29922';}
-    if(mbSel){mbSel.value='5.0';mbSel.style.color='#58a6ff';mbSel.style.borderColor='#58a6ff';}
-  }
+  // Apply initial visual state to match actual filter values (possibly from URL params)
+  if(btn){btn.style.color=filterConfirmed?'#3fb950':'#6e7681';btn.style.borderColor=filterConfirmed?'#3fb950':'#30363d';}
+  if(localBtn){localBtn.style.color=filterLocal?'#d29922':'#6e7681';localBtn.style.borderColor=filterLocal?'#d29922':'#30363d';}
+  if(mbSel){mbSel.value=filterMinMb>0?String(filterMinMb):'0';mbSel.style.color=filterMinMb>0?'#58a6ff':'#6e7681';mbSel.style.borderColor=filterMinMb>0?'#58a6ff':'#30363d';}
 })();
 function confColor(c){return c>=0.835?'#3fb950':c>=0.5?'#d29922':'#6e7681'}
 function fmtAge(ts){const s=Math.round(Date.now()/1000-ts);return s<60?s+'s':s<3600?Math.round(s/60)+'m':Math.round(s/3600)+'h'}
@@ -378,13 +397,15 @@ function flyToEpi(lat,lon,ts){
   map.getPane('overlayPane').style.visibility='hidden';
   map.flyTo([lat,lon],5,{duration:1.0,easeLinearity:0.5});
   map.once('moveend',()=>{map.getPane('overlayPane').style.visibility='';applyMarkerSelection();});
-  // Update URL so this view is bookmarkable/shareable
+  // Update URL so this view is bookmarkable/shareable (includes filter state)
   const row=ts?document.querySelector(`.det[data-ts="${CSS.escape(ts)}"]`):null;
   const unixTs=row?row.dataset.unixTs:null;
   const params=new URLSearchParams(window.location.search);
   if(unixTs){params.set('det',Math.round(unixTs));}else{params.delete('det');}
-  const newUrl=window.location.pathname+(params.toString()?'?'+params.toString():'');
-  history.replaceState(null,'',newUrl);
+  if(filterConfirmed){params.set('conf','1');}else{params.delete('conf');}
+  if(filterMinMb>0){params.set('mb',String(filterMinMb));}else{params.delete('mb');}
+  if(filterLocal){params.set('local','1');}else{params.delete('local');}
+  history.replaceState(null,'',window.location.pathname+(params.toString()?'?'+params.toString():''));
 }
 // audio alert
 let audioEnabled=true;
