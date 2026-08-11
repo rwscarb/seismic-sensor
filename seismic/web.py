@@ -89,6 +89,12 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 #left-panel{overflow-y:auto;min-height:0}
 #map{height:100%;border-radius:4px;background:#000}
 #map-wrap{position:relative;border-radius:4px;overflow:hidden;min-height:0}
+#event-log{position:absolute;bottom:20px;right:10px;z-index:400;width:300px;max-height:160px;overflow-y:auto;pointer-events:none;display:flex;flex-direction:column-reverse;gap:2px}
+#event-log .elog{font-size:10px;font-family:monospace;color:#8b949e;background:rgba(13,17,23,0.82);border-left:2px solid #30363d;padding:2px 6px;border-radius:0 3px 3px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#event-log .elog.elog-det{border-color:#f85149;color:#e6edf3}
+#event-log .elog.elog-usgs{border-color:#3fb950;color:#e6edf3}
+#event-log .elog.elog-sta{border-color:#58a6ff}
+#event-log .elog.elog-info{border-color:#6e7681}
 .right-col{display:flex;flex-direction:column;min-height:0;background:#161b22;border:1px solid #30363d;border-radius:6px;overflow:hidden}
 .no-data{color:#6e7681;font-style:italic;font-size:11px}
 /* fullscreen map */
@@ -149,6 +155,7 @@ body.fs-mode #fs-overlay{display:block}
   <div id="map-wrap">
     <button id="fs-btn" title="Toggle fullscreen map">&#x26F6;</button>
     <div id="map"></div>
+    <div id="event-log"></div>
     <div id="fs-overlay">
       <h3>Stations</h3>
       <div id="fso-stations"></div>
@@ -192,6 +199,15 @@ function _unpinMarker(){
   if(_pinnedMarker){_pinnedMarker.closeTooltip();_pinnedMarker=null;}
 }
 map.on('click',()=>_unpinMarker());
+// Event log
+const _logEl=document.getElementById('event-log');
+const _logEntries=[];
+function elog(msg,cls='elog-info'){
+  const t=new Date().toLocaleTimeString('en',{timeZone:'UTC',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  _logEntries.unshift({t,msg,cls});
+  if(_logEntries.length>40)_logEntries.length=40;
+  _logEl.innerHTML=_logEntries.map(e=>`<div class="elog ${e.cls}">${e.t} ${e.msg}</div>`).join('');
+}
 let filterConfirmed=true, filterMinMb=5.0, filterLocal=true, detDisplayLimit=20;
 // fault overlay — lazy loaded from GEM Global Active Faults dataset
 let _faultLayer=null, _faultLoading=false, _faultOn=false;
@@ -357,6 +373,7 @@ function flyToEpi(lat,lon,ts){
 // audio alert
 let audioEnabled=true;
 let lastDetTs=null;
+let _lastUsgsTs=null;
 let audioCtx=null;
 const muteBtn=document.getElementById('mute-btn');
 muteBtn.addEventListener('click',()=>{
@@ -451,12 +468,23 @@ function update(){
     if(cntEl)cntEl.textContent=activeFilters
       ?`${filteredDets.length} / ${d.detections.length}`
       :(d.detections.length?`${d.detections.length} total`:'');
-    // alert on new detection
+    // alert + log on new detection
     if(dets.length){
       const newest=dets[0];
       if(lastDetTs!==null && newest.ts!==lastDetTs){
         playDetectionAlert();
         showDesktopNotification(newest);
+        const mb=newest.mb!=null?`mb=${newest.mb.toFixed(1)}`:'mb?';
+        const stas=newest.stations.join(' · ');
+        elog(`DET ${mb} conf=${newest.conf.toFixed(3)} [${stas}]`,'elog-det');
+      }
+      // log USGS match when it arrives for the newest detection
+      if(dets[0].usgs&&(!_lastUsgsTs||_lastUsgsTs!==dets[0].ts)){
+        _lastUsgsTs=dets[0].ts;
+        const u=dets[0].usgs;
+        const src=(u.source||'usgs').toUpperCase();
+        elog(`${src} M${u.mag} ${(u.place||'').substring(0,40)}`,'elog-usgs');
+        if(u.lat!=null)elog(`  → ${Math.abs(u.lat).toFixed(2)}°${u.lat>=0?'N':'S'} ${Math.abs(u.lon).toFixed(2)}°${u.lon>=0?'E':'W'}`,'elog-usgs');
       }
       lastDetTs=newest.ts;
     }
@@ -626,6 +654,7 @@ function update(){
     }
   }).catch(()=>{document.getElementById('status-dot').style.background='#f85149'});
 }
+elog('sensor UI loaded','elog-info');
 update();setInterval(update,3000);
 // Deep-link: ?det=<unix_ts> → highlight that detection row after first render
 (()=>{
