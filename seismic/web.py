@@ -356,7 +356,22 @@ document.addEventListener('fullscreenchange',()=>{
   _applyFsMode(!!document.fullscreenElement);
 });
 // Esc is handled by the browser when in native fullscreen; cover the CSS-only fallback case
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!document.fullscreenElement)_applyFsMode(false);});
+// Arrow keys navigate between detection rows; Esc exits CSS fullscreen
+function _navDet(dir){
+  const rows=[...document.querySelectorAll('.det[data-ts]')];
+  if(!rows.length)return;
+  const idx=rows.findIndex(r=>r.dataset.ts===selectedDetTs);
+  const next=rows[idx<0?(dir>0?0:rows.length-1):Math.max(0,Math.min(rows.length-1,idx+dir))];
+  if(!next||next.dataset.ts===selectedDetTs)return;
+  next.click();
+  if(!next.onclick)next.scrollIntoView({behavior:'smooth',block:'center'});
+}
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&!document.fullscreenElement){_applyFsMode(false);return;}
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT'||e.target.isContentEditable)return;
+  if(e.key==='ArrowLeft'){e.preventDefault();_navDet(-1);}
+  else if(e.key==='ArrowRight'){e.preventDefault();_navDet(1);}
+});
 let _pulseTs=null;
 // Zoom-scaled radius: full size at zoom ≥ 8, progressively smaller below that.
 function zoomR(base){
