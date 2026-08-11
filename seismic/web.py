@@ -6,7 +6,7 @@ from seismic.config import (
     WEB_PORT, THRESHOLD, N_CONSENSUS, STATIONS, ALL_STATIONS, SEEDLINK_SERVER,
     USGS_MIN_MAG, EMSC_MIN_MAG, UMAMI_SITE_ID, LOC_MIN_STA,
     CONSENSUS_WINDOW, USGS_SIG_MIN_MAG, SLACK_SIGNING_SECRET,
-    SERVER_START_TIME, _LOG_BUF, _LOG_LOCK, MAPBOX_TOKEN,
+    SERVER_START_TIME, _LOG_BUF, _LOG_LOCK, MAPBOX_TOKEN, BTCVM_LEDGER_PATH,
 )
 from seismic.localize import station_coords, locate_epicenter
 from seismic.state import sensor_state
@@ -81,6 +81,24 @@ def start_web_server():
         data = sensor_state.to_dict()
         data['station_coords'] = {k: list(v) for k, v in station_coords.items()}
         return jsonify(data)
+
+    @app.route('/api/btcvm')
+    def btcvm_ledger():
+        import os
+        entries = []
+        try:
+            if os.path.exists(BTCVM_LEDGER_PATH):
+                with open(BTCVM_LEDGER_PATH) as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            try:
+                                entries.append(json.loads(line))
+                            except Exception:
+                                pass
+        except Exception:
+            pass
+        return jsonify({'entries': entries[-200:]})
 
     @app.route('/api/logs')
     def logs():

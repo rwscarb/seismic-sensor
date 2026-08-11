@@ -542,9 +542,23 @@ function _updateBody(d){
       const verifCls=(det.usgs&&canClick)?' det-verified':'';
       const rowClick=canClick
         ?`onclick="flyToEpi(${pinLat},${pinLon},'${det.ts}')" style="cursor:pointer"`:'';
+      // btcvm anchor icon
+      const btcEntry=_btcvmByUnix[det.unix_ts!=null?det.unix_ts.toFixed(3):null];
+      let btcIcon='';
+      if(btcEntry){
+        const isConf=btcEntry.label==='confirmed';
+        const short=btcEntry.commitment?btcEntry.commitment.slice(0,12)+'…':'';
+        const blk=btcEntry.block_height||'';
+        const tip=`${isConf?'Confirmed':'Raw'} anchor · block ${blk}\ncommitment: ${btcEntry.commitment||''}\n${btcEntry.tx_hash?'tx: '+btcEntry.tx_hash:'ledger only'}`;
+        if(btcEntry.tx_hash){
+          btcIcon=`<a class="det-usgs-icon" href="https://blockstream.info/tx/${encodeURIComponent(btcEntry.tx_hash)}" target="_blank" rel="noopener" title="${escAttr(tip)}" style="text-decoration:none;color:${isConf?'#f7931a':'#a07830'}" onclick="event.stopPropagation()">₿</a>`;
+        } else {
+          btcIcon=`<span class="det-usgs-icon" style="color:#a07830" title="${escAttr(tip)}">₿</span>`;
+        }
+      }
       return sep+`<div class="det${selCls}${mutedCls}${verifCls}" data-ts="${det.ts}" data-unix-ts="${det.unix_ts}" ${rowClick} title="${escAttr(detTitle)}">
         <div class="det-row1"><span class="det-time">${tPart}</span><span class="det-age">${fmtAge(det.unix_ts)}</span></div>
-        <div class="det-row2"><span class="det-stas">${det.stations.join(' · ')}</span><span class="det-chips-inline">${mbChip}${epiChip}${usgsIcon}</span></div>
+        <div class="det-row2"><span class="det-stas">${det.stations.join(' · ')}</span><span class="det-chips-inline">${mbChip}${epiChip}${usgsIcon}${btcIcon}</span></div>
       </div>`;
     }).join('');
     if(dDiv.innerHTML!==newHtml)dDiv.innerHTML=newHtml;
@@ -650,6 +664,23 @@ function _updateBody(d){
         <div style="color:#a371f7;margin-top:2px">${usgsStr}</div>`;
     }
 }
+// btcvm ledger — keyed by det_unix (rounded to ms) for fast lookup
+let _btcvmByUnix={};
+function _pollBtcvm(){
+  fetch('/api/btcvm').then(r=>r.json()).then(d=>{
+    const m={};
+    (d.entries||[]).forEach(e=>{
+      if(e.det_unix!=null){
+        // use rounded key to handle float precision; also store best entry per det
+        const k=e.det_unix.toFixed(3);
+        // prefer confirmed over raw
+        if(!m[k]||e.label==='confirmed')m[k]=e;
+      }
+    });
+    _btcvmByUnix=m;
+  }).catch(()=>{});
+}
+_pollBtcvm();setInterval(_pollBtcvm,15000);
 update();setInterval(update,3000);
 // Deep-link: ?det=<unix_ts> → highlight row, fly map to it, clear filters
 (()=>{

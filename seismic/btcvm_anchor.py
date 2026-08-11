@@ -90,6 +90,8 @@ def _anchor(det_data: dict, label: str) -> dict | None:
         with open(BTCVM_LEDGER_PATH, 'a') as f:
             f.write(json.dumps(entry) + '\n')
 
+        if tx_hash:
+            print(f"  [btcvm] OP_RETURN ok: {tx_hash}", flush=True)
         print(
             f"  [btcvm] {label} anchor @ block {block_height} "
             f"commitment={commitment[:16]}...",
