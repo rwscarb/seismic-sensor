@@ -1,6 +1,31 @@
 const map = L.map('map', {zoomControl:false}).setView([45,10],2);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+const _darkLayer=L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
   {attribution:'&copy; OSM &copy; CARTO',subdomains:'abcd',maxZoom:19}).addTo(map);
+// Satellite layers (ESRI — no API key required)
+const _satBase=L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  {attribution:'&copy; Esri, Maxar, Earthstar Geographics',maxZoom:19});
+const _satLabels=L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+  {attribution:'',maxZoom:19,opacity:0.85});
+let _satOn=false;
+const _satBtn=document.getElementById('sat-btn');
+_satBtn.addEventListener('click',()=>{
+  _satOn=!_satOn;
+  if(_satOn){
+    map.removeLayer(_darkLayer);
+    _satBase.addTo(map);
+    _satLabels.addTo(map);
+    _satBtn.style.color='#58a6ff';
+    _satBtn.style.borderColor='#58a6ff';
+  } else {
+    map.removeLayer(_satBase);
+    map.removeLayer(_satLabels);
+    _darkLayer.addTo(map);
+    _satBtn.style.color='#6e7681';
+    _satBtn.style.borderColor='#30363d';
+  }
+});
 const staMarkers={}, detMarkers=[];
 let sCoords=window.SEISMIC_CONFIG.sCoords;
 let lastFlyTs=null, lastFlyLat=null, lastFlyLon=null, selectedDetTs=null, _pulseIv=null, _pulsePhase=0;
