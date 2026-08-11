@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import time
 import threading
@@ -8,6 +9,19 @@ import warnings
 warnings.filterwarnings('ignore')
 
 SERVER_START_TIME = time.time()  # recorded once at process start; used as deploy boundary in UI
+
+# ── Sensitive values to scrub from public log buffer ─────────────────────────
+# Populated once the env vars are read below; referenced lazily in _LogCapture.
+_SCRUB_VALS: list = []
+
+def _scrub(s: str) -> str:
+    """Replace any registered secret values with [REDACTED] before public logging."""
+    for secret in _SCRUB_VALS:
+        if secret and secret in s:
+            s = s.replace(secret, '[REDACTED]')
+    # Belt-and-suspenders: redact anything that looks like a Slack webhook URL
+    s = re.sub(r'https://hooks\.slack\.com/\S+', '[REDACTED]', s)
+    return s
 
 # ── Log ring buffer — capture all stdout print() calls for /api/logs ──────────
 _LOG_BUF: collections.deque = collections.deque(maxlen=200)
@@ -21,7 +35,7 @@ class _LogCapture:
         if s and s != '\n':
             ts = time.strftime('%H:%M:%SZ', time.gmtime())
             for line in s.splitlines():
-                line = line.strip()
+                line = _scrub(line.strip())
                 if line:
                     with _LOG_LOCK:
                         _LOG_BUF.append({'t': ts, 'msg': line})
@@ -61,6 +75,9 @@ USGS_SIG_MIN_MAG = float(os.environ.get('USGS_SIG_MIN_MAG', '5.5'))      # min m
 TELE_MATCH_WINDOW = float(os.environ.get('TELE_MATCH_WINDOW', '300.0'))
 SLACK_SIGNING_SECRET = os.environ.get('SLACK_SIGNING_SECRET', '')    # Slack app signing secret
 APP_URL = os.environ.get('APP_URL', '').rstrip('/')                   # public base URL for deep links
+
+# Register secrets for log scrubbing (must come after all secrets are read)
+_SCRUB_VALS.extend([v for v in [SLACK_WEBHOOK_URL, SLACK_SIGNING_SECRET] if v])
 
 
 # Parse stations: "GE.APE,GE.MORC" → [('GE','APE'), ('GE','MORC')]
