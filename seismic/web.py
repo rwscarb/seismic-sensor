@@ -156,7 +156,19 @@ body.fs-mode #fs-overlay{display:block}
     </div>
   </div>
   <div class="right-col">
-    <div class="panel-hdr" style="padding:10px 12px;border-bottom:1px solid #21262d;margin-bottom:0"><h2>Detections</h2><span id="det-count" class="det-count"></span><button id="filter-btn" title="Show confirmed catalog matches only" style="margin-left:auto;background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">✓ confirmed</button></div>
+    <div class="panel-hdr" style="padding:8px 10px;border-bottom:1px solid #21262d;margin-bottom:0;gap:4px;flex-wrap:wrap"><h2>Detections</h2><span id="det-count" class="det-count"></span>
+      <div style="display:flex;gap:4px;margin-left:auto;align-items:center;flex-shrink:0">
+        <select id="mb-filter-sel" title="Minimum magnitude filter" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 5px;font-size:10px;cursor:pointer">
+          <option value="0">any mb</option>
+          <option value="3.5">≥3.5</option>
+          <option value="4.0">≥4.0</option>
+          <option value="4.5">≥4.5</option>
+          <option value="5.0">≥5.0</option>
+        </select>
+        <button id="filter-local-btn" title="Show only localized (non-teleseismic) detections" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">📍 local</button>
+        <button id="filter-btn" title="Show confirmed catalog matches only" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">✓ conf</button>
+      </div>
+    </div>
     <div style="flex:1;overflow-y:auto;min-height:0">
       <div id="detections"></div>
     </div>
@@ -170,7 +182,7 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
 const staMarkers={}, detMarkers=[];
 let sCoords=%(station_coords_json)s;
 let lastFlyTs=null, selectedDetTs=null, _pulseIv=null, _pulsePhase=0;
-let filterConfirmed=false, detDisplayLimit=20;
+let filterConfirmed=false, filterMinMb=0, filterLocal=false, detDisplayLimit=20;
 // fault overlay — lazy loaded from GEM Global Active Faults dataset
 let _faultLayer=null, _faultLoading=false, _faultOn=false;
 const _FAULT_URL='https://raw.githubusercontent.com/GEMScienceTools/gem-global-active-faults/master/geojson/gem_active_faults.geojson';
@@ -205,12 +217,28 @@ _faultsBtn.addEventListener('click',async()=>{
 function showMoreDets(){detDisplayLimit+=50;}
 (()=>{
   const btn=document.getElementById('filter-btn');
-  if(!btn)return;
-  btn.addEventListener('click',()=>{
+  if(btn) btn.addEventListener('click',()=>{
     filterConfirmed=!filterConfirmed;
     detDisplayLimit=100;
     btn.style.color=filterConfirmed?'#3fb950':'#6e7681';
     btn.style.borderColor=filterConfirmed?'#3fb950':'#30363d';
+    update();
+  });
+  const localBtn=document.getElementById('filter-local-btn');
+  if(localBtn) localBtn.addEventListener('click',()=>{
+    filterLocal=!filterLocal;
+    detDisplayLimit=100;
+    localBtn.style.color=filterLocal?'#d29922':'#6e7681';
+    localBtn.style.borderColor=filterLocal?'#d29922':'#30363d';
+    update();
+  });
+  const mbSel=document.getElementById('mb-filter-sel');
+  if(mbSel) mbSel.addEventListener('change',()=>{
+    filterMinMb=parseFloat(mbSel.value)||0;
+    detDisplayLimit=100;
+    mbSel.style.color=filterMinMb>0?'#58a6ff':'#6e7681';
+    mbSel.style.borderColor=filterMinMb>0?'#58a6ff':'#30363d';
+    update();
   });
 })();
 function confColor(c){return c>=0.835?'#3fb950':c>=0.5?'#d29922':'#6e7681'}
@@ -390,10 +418,14 @@ function update(){
     // detections
     const dDiv=document.getElementById('detections');
     const dets=[...d.detections].reverse();
-    const filteredDets=filterConfirmed?dets.filter(det=>det.usgs):dets;
+    let filteredDets=dets;
+    if(filterConfirmed) filteredDets=filteredDets.filter(det=>det.usgs);
+    if(filterLocal) filteredDets=filteredDets.filter(det=>det.epicenter&&!det.teleseismic);
+    if(filterMinMb>0) filteredDets=filteredDets.filter(det=>det.mb!=null&&det.mb>=filterMinMb);
     const cntEl=document.getElementById('det-count');
-    if(cntEl)cntEl.textContent=filterConfirmed
-      ?`${filteredDets.length} confirmed`
+    const activeFilters=filterConfirmed||filterLocal||filterMinMb>0;
+    if(cntEl)cntEl.textContent=activeFilters
+      ?`${filteredDets.length} / ${d.detections.length}`
       :(d.detections.length?`${d.detections.length} total`:'');
     // alert on new detection
     if(dets.length){
