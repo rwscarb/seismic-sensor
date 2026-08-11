@@ -17,10 +17,18 @@ KNOWN_COORDS = {
     'GE.MATE': (40.649,  16.704),   # Matera, Italy
     'GE.KARP': (35.784,  27.154),   # Karpathos, Greece
     # IRIS network — Pacific Northwest / Cascadia
-    'IU.COR':  (44.586, -123.304),  # Corvallis, Oregon
-    'CN.PGC':  (48.650, -123.452),  # Saanich, BC (Cascadia forearc)
-    'IU.KDAK': (57.783, -152.584),  # Kodiak Island, Alaska
-    'IU.COLA': (64.900, -147.850),  # College, Alaska
+    'IU.COR':  ( 44.586, -123.304),  # Corvallis, Oregon
+    'CN.PGC':  ( 48.650, -123.452),  # Saanich, BC (Cascadia forearc)
+    'IU.KDAK': ( 57.783, -152.584),  # Kodiak Island, Alaska
+    'IU.COLA': ( 64.900, -147.850),  # College, Alaska
+    # East Asia — Ring of Fire coverage
+    'IU.MAJO': ( 36.541,  138.207),  # Matsushiro, Japan
+    'IU.INCN': ( 37.476,  126.623),  # Incheon, South Korea
+    'IU.CHTO': ( 18.796,   98.945),  # Chiang Mai, Thailand (SE Asia / Sumatra)
+    # Eastern Pacific — closes South America gap
+    'IU.PAYG': ( -0.674,  -90.286),  # Puerto Ayora, Galapagos
+    # South Atlantic — closes mid-Atlantic / African event gap
+    'II.SHEL': (-15.966,   -5.746),  # St Helena Island
 }
 
 station_coords = {}    # populated at startup
