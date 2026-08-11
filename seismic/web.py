@@ -6,7 +6,7 @@ from seismic.config import (
     WEB_PORT, THRESHOLD, N_CONSENSUS, STATIONS, SEEDLINK_SERVER,
     USGS_MIN_MAG, EMSC_MIN_MAG, UMAMI_SITE_ID, LOC_MIN_STA,
     CONSENSUS_WINDOW, USGS_SIG_MIN_MAG, SLACK_SIGNING_SECRET,
-    SERVER_START_TIME,
+    SERVER_START_TIME, _LOG_BUF, _LOG_LOCK,
 )
 from seismic.localize import station_coords, locate_epicenter
 from seismic.state import sensor_state
@@ -199,15 +199,27 @@ function _unpinMarker(){
   if(_pinnedMarker){_pinnedMarker.closeTooltip();_pinnedMarker=null;}
 }
 map.on('click',()=>_unpinMarker());
-// Event log
+// Event log — polls /api/logs and renders backend stdout in the map overlay
 const _logEl=document.getElementById('event-log');
-const _logEntries=[];
-function elog(msg,cls='elog-info'){
-  const t=new Date().toLocaleTimeString('en',{timeZone:'UTC',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
-  _logEntries.unshift({t,msg,cls});
-  if(_logEntries.length>40)_logEntries.length=40;
-  _logEl.innerHTML=_logEntries.map(e=>`<div class="elog ${e.cls}">${e.t} ${e.msg}</div>`).join('');
+let _logSeen=new Set();
+function _classifyLog(msg){
+  if(/CANDIDATE|CONSENSUS|DETECTED/.test(msg))return 'elog-det';
+  if(/usgs|emsc|USGS|EMSC|M[0-9]\.[0-9].*—/.test(msg))return 'elog-usgs';
+  if(/conf=|mag=|station/.test(msg))return 'elog-sta';
+  return 'elog-info';
 }
+function _pollLogs(){
+  fetch('/api/logs').then(r=>r.json()).then(d=>{
+    const entries=d.entries||[];
+    // render newest-first, deduplicate by t+msg
+    const rendered=entries.slice().reverse().slice(0,60).map(e=>{
+      const cls=_classifyLog(e.msg);
+      return `<div class="elog ${cls}">${e.t} ${e.msg}</div>`;
+    });
+    _logEl.innerHTML=rendered.join('');
+  }).catch(()=>{});
+}
+setInterval(_pollLogs,1500);
 let filterConfirmed=true, filterMinMb=5.0, filterLocal=true, detDisplayLimit=20;
 // fault overlay — lazy loaded from GEM Global Active Faults dataset
 let _faultLayer=null, _faultLoading=false, _faultOn=false;
@@ -373,7 +385,6 @@ function flyToEpi(lat,lon,ts){
 // audio alert
 let audioEnabled=true;
 let lastDetTs=null;
-let _lastUsgsTs=null;
 let audioCtx=null;
 const muteBtn=document.getElementById('mute-btn');
 muteBtn.addEventListener('click',()=>{
@@ -474,17 +485,6 @@ function update(){
       if(lastDetTs!==null && newest.ts!==lastDetTs){
         playDetectionAlert();
         showDesktopNotification(newest);
-        const mb=newest.mb!=null?`mb=${newest.mb.toFixed(1)}`:'mb?';
-        const stas=newest.stations.join(' · ');
-        elog(`DET ${mb} conf=${newest.conf.toFixed(3)} [${stas}]`,'elog-det');
-      }
-      // log USGS match when it arrives for the newest detection
-      if(dets[0].usgs&&(!_lastUsgsTs||_lastUsgsTs!==dets[0].ts)){
-        _lastUsgsTs=dets[0].ts;
-        const u=dets[0].usgs;
-        const src=(u.source||'usgs').toUpperCase();
-        elog(`${src} M${u.mag} ${(u.place||'').substring(0,40)}`,'elog-usgs');
-        if(u.lat!=null)elog(`  → ${Math.abs(u.lat).toFixed(2)}°${u.lat>=0?'N':'S'} ${Math.abs(u.lon).toFixed(2)}°${u.lon>=0?'E':'W'}`,'elog-usgs');
       }
       lastDetTs=newest.ts;
     }
@@ -654,7 +654,6 @@ function update(){
     }
   }).catch(()=>{document.getElementById('status-dot').style.background='#f85149'});
 }
-elog('sensor UI loaded','elog-info');
 update();setInterval(update,3000);
 // Deep-link: ?det=<unix_ts> → highlight that detection row after first render
 (()=>{
@@ -751,6 +750,15 @@ def start_web_server():
         data = sensor_state.to_dict()
         data['station_coords'] = {k: list(v) for k, v in station_coords.items()}
         return jsonify(data)
+
+    @app.route('/api/logs')
+    def logs():
+        since = request.args.get('since', type=int, default=0)
+        with _LOG_LOCK:
+            entries = list(_LOG_BUF)
+        if since:
+            entries = [e for e in entries if e.get('seq', 0) > since]
+        return jsonify({'entries': entries[-100:], 'total': len(_LOG_BUF)})
 
     @app.route('/api/localize', methods=['POST'])
     def localize():

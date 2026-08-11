@@ -1,10 +1,36 @@
 import os
+import sys
 import time
+import threading
+import collections
 import warnings
 
 warnings.filterwarnings('ignore')
 
 SERVER_START_TIME = time.time()  # recorded once at process start; used as deploy boundary in UI
+
+# ── Log ring buffer — capture all stdout print() calls for /api/logs ──────────
+_LOG_BUF: collections.deque = collections.deque(maxlen=200)
+_LOG_LOCK = threading.Lock()
+
+class _LogCapture:
+    def __init__(self, real):
+        self._real = real
+    def write(self, s):
+        self._real.write(s)
+        if s and s != '\n':
+            ts = time.strftime('%H:%M:%SZ', time.gmtime())
+            for line in s.splitlines():
+                line = line.strip()
+                if line:
+                    with _LOG_LOCK:
+                        _LOG_BUF.append({'t': ts, 'msg': line})
+    def flush(self):
+        self._real.flush()
+    def fileno(self):
+        return self._real.fileno()
+
+sys.stdout = _LogCapture(sys.stdout)
 
 # ── Config from env ────────────────────────────────────────────────────────────
 CHECKPOINT_DIR = os.environ.get('CHECKPOINT_DIR', './checkpoints')
