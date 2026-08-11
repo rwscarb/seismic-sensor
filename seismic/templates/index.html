@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Seismic Sensor — {{ app_title }}</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230d1117'/%3E%3Cpolyline points='1,16 5,16 7,10 9,22 11,8 13,24 15,13 17,19 19,16 23,16 25,11 27,16 31,16' fill='none' stroke='%23f85149' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+<script>
+window.SEISMIC_CONFIG={
+  threshold:{{ threshold }},
+  usgsMag:{{ usgs_min_mag }},
+  emscMag:{{ emsc_min_mag }},
+  sCoords:{{ station_coords_json|safe }}
+};
+</script>
+<script defer src="//u.fib896.com/script.js" data-website-id="{{ umami_id }}"></script>
+</head>
+<body>
+<header>
+  <div id="status-dot"></div>
+  <h1>&#127757; Seismic Sensor</h1>
+  <span id="cfg" title="SeedLink: {{ seedlink }}">{{ cfg_text }}</span>
+  <span id="last-event-summary"></span>
+  <span id="last-update">connecting...</span>
+  <button id="faults-btn" title="Toggle active fault overlay (GEM Global Active Faults)" style="background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;margin-left:4px">&#9889; faults</button>
+  <button id="mute-btn" title="Toggle audio alerts" style="background:#161b22;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;margin-left:4px">&#128266; on</button>
+  <select id="tz-sel" title="Display timezone" style="background:#161b22;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:2px 5px;font-size:11px;cursor:pointer;margin-left:6px">
+    <option value="auto">Auto TZ</option>
+    <option value="UTC">UTC</option>
+    <option value="America/Los_Angeles">Pacific</option>
+    <option value="America/Denver">Mountain</option>
+    <option value="America/Chicago">Central</option>
+    <option value="America/New_York">Eastern</option>
+    <option value="Europe/London">London</option>
+    <option value="Europe/Paris">Paris/Berlin</option>
+    <option value="Europe/Helsinki">Helsinki/Athens</option>
+    <option value="Europe/Moscow">Moscow</option>
+    <option value="Asia/Dubai">Dubai</option>
+    <option value="Asia/Kolkata">India</option>
+    <option value="Asia/Bangkok">Bangkok</option>
+    <option value="Asia/Tokyo">Tokyo</option>
+    <option value="Australia/Sydney">Sydney</option>
+  </select>
+</header>
+<div class="grid">
+  <div class="panel" id="left-panel">
+    <div class="panel-hdr"><h2>Stations</h2></div>
+    <div id="stations"></div>
+  </div>
+  <div id="map-wrap">
+    <button id="fs-btn" title="Toggle fullscreen map">&#x26F6;</button>
+    <div id="map"></div>
+    <div id="event-log"></div>
+    <div id="fs-overlay">
+      <h3>Stations</h3>
+      <div id="fso-stations"></div>
+      <div id="fso-det" class="fso-det"></div>
+    </div>
+  </div>
+  <div class="right-col">
+    <div class="panel-hdr" style="padding:8px 10px;border-bottom:1px solid #21262d;margin-bottom:0;gap:4px;flex-wrap:wrap"><h2>Detections</h2><span id="det-count" class="det-count"></span>
+      <div style="display:flex;gap:4px;margin-left:auto;align-items:center;flex-shrink:0">
+        <select id="mb-filter-sel" title="Minimum magnitude filter" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 5px;font-size:10px;cursor:pointer">
+          <option value="0">any mb</option>
+          <option value="3.5">&#8805;3.5</option>
+          <option value="4.0">&#8805;4.0</option>
+          <option value="4.5">&#8805;4.5</option>
+          <option value="5.0">&#8805;5.0</option>
+        </select>
+        <button id="filter-local-btn" title="Show only localized (non-teleseismic) detections" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">&#128205; local</button>
+        <button id="filter-btn" title="Show confirmed catalog matches only" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">&#10003; conf</button>
+      </div>
+    </div>
+    <div style="flex:1;overflow-y:auto;min-height:0">
+      <div id="detections"></div>
+    </div>
+    <div id="det-more" style="display:none;padding:6px 8px;border-top:1px solid #21262d"><button onclick="showMoreDets()" style="width:100%;background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:4px 10px;font-size:10px;cursor:pointer">&#8595; show older</button></div>
+  </div>
+</div>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
