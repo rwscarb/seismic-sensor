@@ -5,7 +5,7 @@ from seismic.config import (
     USGS_SIG_MIN_MAG, USGS_POLL_INTERVAL, TELE_MATCH_WINDOW, SLACK_WEBHOOK_URL, APP_URL,
 )
 from seismic.localize import station_coords, haversine_km, p_travel_time_s
-from seismic.state import sensor_state
+from seismic.state import sensor_state  # noqa: F401 — used for update_usgs override
 
 # ── USGS significant-event watcher ───────────────────────────────────────────
 # Polls USGS every USGS_POLL_INTERVAL seconds.  For each significant event
@@ -129,6 +129,11 @@ def poll_usgs_significant():
                 if matched:
                     lag = abs(matched.unix_ts - exp_arr)
                     status = f'DETECTED (Δ={lag:.0f}s conf={matched.conf:.3f})'
+                    # Authoritative USGS sig-event coords override per-detection catalog pick
+                    usgs_record = {**event, 'source': 'usgs', 'magType': 'M'}
+                    sensor_state.update_usgs(matched.unix_ts, usgs_record)
+                    print(f'  [sig-watch] updated detection {matched.unix_ts:.0f} '
+                          f'with USGS coords {coord_str}', flush=True)
                 else:
                     status = 'NOT DETECTED'
                 print(

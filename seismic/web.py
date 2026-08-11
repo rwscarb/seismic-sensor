@@ -89,7 +89,7 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 #left-panel{overflow-y:auto;min-height:0}
 #map{height:100%;border-radius:4px;background:#000}
 #map-wrap{position:relative;border-radius:4px;overflow:hidden;min-height:0}
-#event-log{position:absolute;bottom:24px;right:10px;z-index:400;width:340px;max-height:180px;overflow-y:auto;pointer-events:auto;background:rgba(13,17,23,0.88);border:1px solid #30363d;border-radius:4px;padding:4px 0}
+#event-log{position:absolute;bottom:24px;right:10px;z-index:400;width:480px;max-height:200px;overflow-y:auto;pointer-events:auto;background:rgba(13,17,23,0.55);border:1px solid #21262d;border-radius:4px;padding:4px 0}
 #event-log .elog{font-size:10.5px;font-family:monospace;color:#8b949e;padding:1px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.5}
 #event-log .elog.elog-det{color:#f85149;border-left:2px solid #f85149;padding-left:6px}
 #event-log .elog.elog-usgs{color:#3fb950;border-left:2px solid #3fb950;padding-left:6px}
