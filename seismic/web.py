@@ -220,6 +220,9 @@ function _pollLogs(){
 }
 setInterval(_pollLogs,1500);
 let filterConfirmed=true, filterMinMb=5.0, filterLocal=true, detDisplayLimit=20;
+// If arriving via deep link, clear filters so target detection is always visible
+const _deepLinkTs=(()=>{const p=new URLSearchParams(window.location.search).get('det');return p?parseFloat(p):null;})();
+if(_deepLinkTs){filterConfirmed=false;filterMinMb=0;filterLocal=false;detDisplayLimit=500;}
 // fault overlay — lazy loaded from GEM Global Active Faults dataset
 let _faultLayer=null, _faultLoading=false, _faultOn=false;
 const _FAULT_URL='https://raw.githubusercontent.com/GEMScienceTools/gem-global-active-faults/master/geojson/gem_active_faults.geojson';
@@ -277,10 +280,12 @@ function showMoreDets(){detDisplayLimit+=50;}
     mbSel.style.borderColor=filterMinMb>0?'#58a6ff':'#30363d';
     update();
   });
-  // Apply initial visual state to match default filter values
-  if(btn){btn.style.color='#3fb950';btn.style.borderColor='#3fb950';}
-  if(localBtn){localBtn.style.color='#d29922';localBtn.style.borderColor='#d29922';}
-  if(mbSel){mbSel.value='5.0';mbSel.style.color='#58a6ff';mbSel.style.borderColor='#58a6ff';}
+  // Apply initial visual state to match default filter values (skip if deep link cleared filters)
+  if(!_deepLinkTs){
+    if(btn){btn.style.color='#3fb950';btn.style.borderColor='#3fb950';}
+    if(localBtn){localBtn.style.color='#d29922';localBtn.style.borderColor='#d29922';}
+    if(mbSel){mbSel.value='5.0';mbSel.style.color='#58a6ff';mbSel.style.borderColor='#58a6ff';}
+  }
 })();
 function confColor(c){return c>=0.835?'#3fb950':c>=0.5?'#d29922':'#6e7681'}
 function fmtAge(ts){const s=Math.round(Date.now()/1000-ts);return s<60?s+'s':s<3600?Math.round(s/60)+'m':Math.round(s/3600)+'h'}
@@ -626,9 +631,9 @@ function update(){
     });
     detMarkers.length=0;kept.forEach(x=>detMarkers.push(x));
     if(markersChanged)applyMarkerSelection();
-    // flyTo newest non-teleseismic epicenter when it first appears
+    // flyTo newest non-teleseismic epicenter when it first appears (skip if deep link)
     const newestEpi=dets.find(det=>det.epicenter&&!det.teleseismic);
-    if(newestEpi && newestEpi.ts!==lastFlyTs){
+    if(!_deepLinkTs && newestEpi && newestEpi.ts!==lastFlyTs){
       lastFlyTs=newestEpi.ts;
       selectedDetTs=newestEpi.ts;
       applyRowSelection();
@@ -662,25 +667,39 @@ function update(){
   }).catch(()=>{document.getElementById('status-dot').style.background='#f85149'});
 }
 update();setInterval(update,3000);
-// Deep-link: ?det=<unix_ts> → highlight that detection row after first render
+// Deep-link: ?det=<unix_ts> → highlight row, fly map to it, clear filters
 (()=>{
-  const params=new URLSearchParams(window.location.search);
-  const detTs=params.get('det');
-  if(!detTs)return;
-  const target=parseFloat(detTs);
+  if(!_deepLinkTs)return;
+  // Update filter button visuals to match cleared state
+  const _dlInit=()=>{
+    const btn=document.getElementById('filter-btn');
+    const localBtn=document.getElementById('filter-local-btn');
+    const mbSel=document.getElementById('mb-filter-sel');
+    if(btn){btn.style.color='#6e7681';btn.style.borderColor='#30363d';}
+    if(localBtn){localBtn.style.color='#6e7681';localBtn.style.borderColor='#30363d';}
+    if(mbSel){mbSel.value='0';mbSel.style.color='#6e7681';mbSel.style.borderColor='#30363d';}
+  };
+  setTimeout(_dlInit,100);
   let attempts=0;
   const tryHighlight=()=>{
     const rows=document.querySelectorAll('.det[data-unix-ts]');
     for(const row of rows){
-      if(Math.abs((parseFloat(row.dataset.unixTs)||0)-target)<2){
+      if(Math.abs((parseFloat(row.dataset.unixTs)||0)-_deepLinkTs)<2){
         row.scrollIntoView({behavior:'smooth',block:'center'});
+        row.style.transition='outline .2s,box-shadow .2s';
         row.style.outline='2px solid #58a6ff';
-        row.style.boxShadow='0 0 8px #58a6ff88';
+        row.style.boxShadow='0 0 10px #58a6ff99';
         setTimeout(()=>{row.style.outline='';row.style.boxShadow='';},4000);
+        // Fly map to this detection's epicenter if available
+        const ts=row.dataset.ts;
+        if(ts){
+          const m=detMarkers.find(x=>x.ts===ts);
+          if(m){const ll=m.m.getLatLng();map.flyTo([ll.lat,ll.lng],5,{duration:1.2,easeLinearity:0.5});}
+        }
         return;
       }
     }
-    if(++attempts<8)setTimeout(tryHighlight,600);
+    if(++attempts<12)setTimeout(tryHighlight,600);
   };
   setTimeout(tryHighlight,800);
 })();
