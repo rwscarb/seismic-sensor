@@ -74,7 +74,8 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 .det-tip .tip-mb.high{color:#f85149}.det-tip .tip-mb.mid{color:#d29922}.det-tip .tip-mb.low{color:#58a6ff}
 .det-tip .tip-stas{color:#8b949e;font-size:10px;margin-top:3px}
 .det-tip .tip-loc{color:#6e7681;font-size:10px;margin-top:2px}
-.leaflet-tooltip.det-tip::before{display:none}
+.det-tip .tip-loc-orig{font-size:10px;margin-top:1px}.det-tip .tip-loc-orig a{color:#4a9eff;text-decoration:none;pointer-events:all}.det-tip .tip-loc-orig a:hover{text-decoration:underline}
+.leaflet-tooltip.det-tip::before{display:none}.leaflet-tooltip.det-tip{pointer-events:all}
 .sta-tip{background:#0d1117;border:1px solid #21262d;border-radius:5px;padding:5px 9px;box-shadow:0 3px 12px rgba(0,0,0,.5);font-size:10px;color:#c9d1d9;white-space:nowrap;pointer-events:none}
 .sta-tip .tip-key{color:#58a6ff;font-weight:600;font-size:11px}
 .sta-tip .tip-conf{margin-top:2px}
@@ -651,11 +652,19 @@ function update(){
       const mbClass=mb>=5?'high':mb>=4?'mid':'low';
       const locSrc=usgsCoords?'USGS':'sensor';
       const locStr=`${locSrc}: ${Math.abs(la).toFixed(2)}°${la>=0?'N':'S'} ${Math.abs(lo).toFixed(2)}°${lo>=0?'E':'W'}`;
+      const hasOrig=usgsCoords&&det.epicenter&&det.epicenter[0]!=null;
+      const origLa=hasOrig?det.epicenter[0]:null;
+      const origLo=hasOrig?det.epicenter[1]:null;
+      const origStr=hasOrig?`${Math.abs(origLa).toFixed(2)}°${origLa>=0?'N':'S'} ${Math.abs(origLo).toFixed(2)}°${origLo>=0?'E':'W'}`:'';
+      const origLink=hasOrig
+        ?`<div class="tip-loc-orig"><a href="#" onclick="event.preventDefault();event.stopPropagation();map.flyTo([${origLa},${origLo}],5,{duration:1.0})">sensor: ${origStr}</a></div>`
+        :'';
       const tipHtml=`<div class="det-tip">`
         +`<div class="tip-time">${fmtLocal(det.ts)}</div>`
         +`<div class="tip-mb ${mbClass}">${mbLabel}</div>`
         +`<div class="tip-stas">${det.stations.join(' · ')}</div>`
         +`<div class="tip-loc">${locStr}</div>`
+        +origLink
         +'</div>';
       const m=L.circleMarker([la,lo],{radius:zoomR(r),color:'#c0392b',weight:1,fillColor:'#f85149',fillOpacity:.85})
         .bindTooltip(tipHtml,{sticky:false,direction:'top',className:'det-tip'}).addTo(map);
