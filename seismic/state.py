@@ -6,6 +6,8 @@ import time
 
 from seismic.config import DETECTIONS_PATH, SERVER_START_TIME
 
+MAX_DETECTIONS = 2000  # in-memory ring size; all are returned to UI
+
 
 @dataclasses.dataclass
 class StationSnap:
@@ -87,7 +89,7 @@ class SensorState:
     def add_detection(self, det):
         with self._lock:
             self.detections.append(det)
-            if len(self.detections) > 500:
+            if len(self.detections) > MAX_DETECTIONS:
                 self.detections.pop(0)
             snap = list(self.detections)
         _save_detections(snap)
@@ -126,7 +128,7 @@ class SensorState:
                 'stations': {k: dataclasses.asdict(v) for k, v in self.stations.items()},
                 'detections': [
                     {**dataclasses.asdict(d), 'stations': list(d.stations)}
-                    for d in self.detections[-200:]
+                    for d in self.detections
                 ],
                 'now': time.time(),
                 'server_start': SERVER_START_TIME,
