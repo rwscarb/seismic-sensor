@@ -41,6 +41,10 @@ def _find_matching_detection(expected_arrival):
 
 def _slack_sig_event(event, expected_arrival, matched_det):
     """Post a significant-event Slack alert (distinct from detection alerts)."""
+    from seismic.runtime import is_muted  # noqa: PLC0415
+    if is_muted():
+        print('  [sig-watch] alerts muted — skipping significant-event alert', flush=True)
+        return
     if not SLACK_WEBHOOK_URL:
         return
     import urllib.request

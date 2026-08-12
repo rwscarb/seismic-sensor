@@ -8,6 +8,7 @@ from seismic.config import (
     CHANNELS, N_CONSENSUS, CONSENSUS_WINDOW, THRESHOLD, ALERT_COOLDOWN,
     P_LEAD_S, MB_DELAY_S, MAG_MAX_CREDIBLE, LOC_MIN_STA, fmt_mag,
 )
+from seismic.runtime import get_threshold
 from seismic.localize import locate_epicenter, station_coords
 from seismic.model import refine_picks_phasenet
 from seismic.state import sensor_state, DetectionSnap
@@ -58,7 +59,7 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
     key = station_key(net, sta)
     sensor_state.update_station(key, conf, mag_est)
 
-    if conf >= THRESHOLD:
+    if conf >= get_threshold():
         # Record first P-wave arrival (corrected for model pre-P horizon)
         if station_first_arr[key] is None:
             station_first_arr[key] = now + P_LEAD_S

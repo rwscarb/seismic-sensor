@@ -8,6 +8,7 @@ from seismic.config import (
     CONSENSUS_WINDOW, USGS_SIG_MIN_MAG, SLACK_SIGNING_SECRET,
     SERVER_START_TIME, _LOG_BUF, _LOG_LOCK, MAPBOX_TOKEN, BTCVM_LEDGER_PATH,
 )
+import seismic.runtime as _runtime
 from seismic.localize import station_coords, locate_epicenter
 from seismic.state import sensor_state
 from seismic.watcher import _expected_p_arrival, _find_matching_detection
@@ -168,13 +169,22 @@ def start_web_server():
             det_count = len(snap['detections'])
             last_det = snap['detections'][-1]['ts'] if snap['detections'] else 'none'
             sta_text = '*Stations:*\n' + '\n'.join(sta_lines) if sta_lines else '*Stations:* none active'
+            rt = _runtime.status_dict()
+            if rt['muted']:
+                rem = rt['muted_remaining_s']
+                rm, rs = divmod(rem, 60)
+                mute_text = f'🔇 *Muted* — {rm}m {rs}s remaining'
+            else:
+                mute_text = '🔔 Alerts active'
+            thr_tag = ' *(override)*' if rt['threshold_override'] else ''
             blocks = [
                 {'type': 'header', 'text': {'type': 'plain_text', 'text': '🌍 Seismic Sensor Status'}},
                 {'type': 'section', 'fields': [
                     {'type': 'mrkdwn', 'text': f'*Uptime:* {h}h {m}m'},
                     {'type': 'mrkdwn', 'text': f'*Detections:* {det_count} total'},
                     {'type': 'mrkdwn', 'text': f'*Last detection:* {last_det}'},
-                    {'type': 'mrkdwn', 'text': f'*Threshold:* {THRESHOLD}'},
+                    {'type': 'mrkdwn', 'text': f'*Threshold:* `{rt["threshold"]:.3f}`{thr_tag}'},
+                    {'type': 'mrkdwn', 'text': mute_text},
                 ]},
                 {'type': 'section', 'text': {'type': 'mrkdwn', 'text': sta_text}},
             ]
@@ -245,12 +255,70 @@ def start_web_server():
             except Exception as e:
                 return jsonify({'response_type': 'ephemeral', 'text': f'USGS fetch failed: {e}'})
 
+        elif sub == 'mute':
+            # /seismic mute [minutes]   default = 60
+            duration = 60.0
+            if len(parts) > 1:
+                try:
+                    duration = float(parts[1])
+                    if duration <= 0:
+                        return jsonify({'response_type': 'ephemeral',
+                                        'text': 'Duration must be > 0 minutes.'})
+                    duration = min(duration, 1440)  # cap at 24 h
+                except ValueError:
+                    return jsonify({'response_type': 'ephemeral',
+                                    'text': 'Usage: `/seismic mute [minutes]`'})
+            user_id = request.form.get('user_id', '')
+            user_name = request.form.get('user_name', 'unknown')
+            _runtime.mute(duration, by=f'<@{user_id}>' if user_id else user_name)
+            until_str = time.strftime('%H:%MZ', time.gmtime(time.time() + duration * 60))
+            return jsonify({
+                'response_type': 'in_channel',
+                'text': f'🔇 Seismic alerts muted for *{duration:.0f} min* (until `{until_str}`).',
+            })
+
+        elif sub == 'unmute':
+            user_id = request.form.get('user_id', '')
+            user_name = request.form.get('user_name', 'unknown')
+            _runtime.unmute(by=f'<@{user_id}>' if user_id else user_name)
+            return jsonify({'response_type': 'in_channel', 'text': '🔔 Seismic alerts unmuted.'})
+
+        elif sub == 'sensitivity':
+            # /seismic sensitivity <0.0–1.0 | reset>
+            if len(parts) < 2:
+                rt = _runtime.status_dict()
+                cur = rt['threshold']
+                tag = ' *(override)*' if rt['threshold_override'] else ' *(default)*'
+                return jsonify({'response_type': 'ephemeral',
+                                'text': f'Current threshold: `{cur:.3f}`{tag}\nUsage: `/seismic sensitivity <0.0–1.0 | reset>`'})
+            arg = parts[1]
+            if arg == 'reset':
+                _runtime.reset_threshold()
+                return jsonify({'response_type': 'in_channel',
+                                'text': f'↩️ Detection threshold reset to default (`{THRESHOLD}`).' })
+            try:
+                val = float(arg)
+                if not 0.0 <= val <= 1.0:
+                    raise ValueError
+            except ValueError:
+                return jsonify({'response_type': 'ephemeral',
+                                'text': 'Threshold must be a float between 0.0 and 1.0, or `reset`.'})
+            _runtime.set_threshold(val)
+            direction = '📈 more sensitive' if val < THRESHOLD else '📉 less sensitive'
+            return jsonify({
+                'response_type': 'in_channel',
+                'text': f'🎚️ Detection threshold set to `{val:.3f}` ({direction}; default `{THRESHOLD}`).',
+            })
+
         elif sub == 'help':
             return jsonify({'response_type': 'ephemeral', 'text': (
                 '*Seismic Sensor slash commands:*\n'
                 '`/seismic status` — station health, uptime, detection count\n'
                 '`/seismic recent [N]` — last N detections (default 5, max 20)\n'
                 '`/seismic usgs` — M5.5+ events past 24h with detection status\n'
+                '`/seismic mute [minutes]` — silence Slack alerts (default 60 min, max 1440)\n'
+                '`/seismic unmute` — re-enable alerts immediately\n'
+                '`/seismic sensitivity <0.0–1.0 | reset>` — adjust detection threshold\n'
                 '`/seismic help` — this message'
             )})
 

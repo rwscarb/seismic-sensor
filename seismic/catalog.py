@@ -81,6 +81,10 @@ def query_usgs_event(det_unix, p_arrivals):
 
 def send_slack_alert(ts, stations_fired, conf, epicenter=None, mag_est=None):
     """POST a detection alert to Slack webhook if configured."""
+    from seismic.runtime import is_muted  # noqa: PLC0415
+    if is_muted():
+        print('  [slack] alerts muted — skipping detection alert', flush=True)
+        return
     if not SLACK_WEBHOOK_URL:
         return
     import urllib.request

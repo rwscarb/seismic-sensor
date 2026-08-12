@@ -11,7 +11,7 @@ features:
     - command: /seismic
       url: https://seismic-sensor.fly.dev/slack/command
       description: Query the seismic sensor
-      usage_hint: "[status | recent [N] | usgs | help]"
+      usage_hint: "[status | recent [N] | usgs | mute [min] | unmute | sensitivity <0-1|reset> | help]"
       should_escape: false
 
 oauth_config:
