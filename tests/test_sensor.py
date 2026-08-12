@@ -84,7 +84,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from seismic.localize import haversine_km, p_travel_time_s, locate_epicenter, station_coords
 from seismic.config import fmt_mag
-from seismic.state import SensorState, DetectionSnap
+from seismic.state import SensorState, DetectionSnap, MAX_DETECTIONS
 
 # Build a 'sensor' namespace so test bodies need no changes
 import types as _types
@@ -158,10 +158,11 @@ class TestSensorState(unittest.TestCase):
         self.assertEqual(len(self.state.detections), 1)
         self.assertEqual(self.state.detections[0].conf, 0.91)
 
-    def test_detection_capped_at_500(self):
-        for i in range(505):
+    def test_detection_capped_at_max(self):
+        n = MAX_DETECTIONS + 5
+        for i in range(n):
             self.state.add_detection(sensor.DetectionSnap(unix_ts=float(i), conf=0.9))
-        self.assertEqual(len(self.state.detections), 500)
+        self.assertEqual(len(self.state.detections), MAX_DETECTIONS)
 
     def test_update_mb(self):
         det = sensor.DetectionSnap(unix_ts=5000.0, conf=0.9)
