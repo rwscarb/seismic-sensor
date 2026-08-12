@@ -180,7 +180,17 @@ function showMoreDets(){detDisplayLimit+=50;}
   if(mbSel){if(filterMinMb>0){mbSel.value=filterMinMb.toFixed(1);}else{mbSel.selectedIndex=0;}mbSel.style.color=filterMinMb>0?'#58a6ff':'#8b949e';mbSel.style.borderColor=filterMinMb>0?'#58a6ff':'#30363d';}
 })();
 function confColor(c){return c>=0.835?'#3fb950':c>=0.5?'#d29922':'#6e7681'}
-function fmtAge(ts){const s=Math.round(Date.now()/1000-ts);return s<60?s+'s':s<3600?Math.round(s/60)+'m':Math.round(s/3600)+'h'}
+// Server clock offset (seconds; positive = server ahead of browser)
+let _serverClockOffset=0;
+function _serverNow(){return Date.now()/1000+_serverClockOffset;}
+function fmtAge(ts){
+  const s=Math.round(_serverNow()-ts);
+  if(s<0)return '—';
+  if(s<60)return s+'s';
+  if(s<3600)return Math.round(s/60)+'m';
+  if(s<86400)return Math.round(s/3600)+'h';
+  return Math.round(s/86400)+'d';
+}
 const _browserTz=Intl.DateTimeFormat().resolvedOptions().timeZone;
 let _userTz=localStorage.getItem('tz')||'auto';
 function _activeTz(){return _userTz==='auto'?_browserTz:_userTz;}
@@ -385,11 +395,57 @@ function update(){
     try{_updateBody(d);}catch(e){console.error('[seismic] update error:',e);}
   }).catch(()=>{document.getElementById('status-dot').style.background='#f85149'});
 }
+// ── Detection replay ─────────────────────────────────────────────────────────
+let _replayActive=false,_replayTs=null,_replayInterval=null;
+function _replayStop(){
+  if(_replayInterval){clearInterval(_replayInterval);_replayInterval=null;}
+  _replayActive=false;
+  const btn=document.getElementById('replay-btn');
+  if(btn)btn.textContent='▶ replay';
+}
+function _replayStart(dets){
+  if(!dets||!dets.length)return;
+  _replayStop();
+  const sorted=[...dets].sort((a,b)=>a.unix_ts-b.unix_ts);
+  let idx=0;
+  _replayActive=true;
+  const btn=document.getElementById('replay-btn');
+  if(btn)btn.textContent='⏹ stop';
+  function _step(){
+    if(idx>=sorted.length){_replayStop();return;}
+    const det=sorted[idx++];
+    if(det.epicenter||( det.usgs&&det.usgs.lat!=null)){
+      const la=det.usgs&&det.usgs.lat!=null?det.usgs.lat:det.epicenter[0];
+      const lo=det.usgs&&det.usgs.lon!=null?det.usgs.lon:det.epicenter[1];
+      flyToEpi(la,lo,det.ts);
+    }
+    const scrub=document.getElementById('replay-scrub');
+    if(scrub){scrub.value=idx-1;scrub.title=det.ts;}
+  }
+  _step();
+  _replayInterval=setInterval(_step,1800);
+}
+// Replay button is wired per-update in _updateBody once filteredDets is available.
+
 function _updateBody(d){
     const _now=new Date();
     const _localStr=_now.toLocaleTimeString('en',{timeZone:_activeTz(),hour:'2-digit',minute:'2-digit',second:'2-digit'})+' '+_tzAbbr();
     const _utcStr=_now.toLocaleTimeString('en',{timeZone:'UTC',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' UTC';
     document.getElementById('last-update').textContent='updated '+_localStr+' ('+_utcStr+')';
+    // Sync server clock offset; show skew warning if >30s
+    if(d.now){
+      const newOff=d.now-Date.now()/1000;
+      _serverClockOffset=newOff;
+      const skewEl=document.getElementById('clock-skew-banner');
+      if(skewEl){
+        if(Math.abs(newOff)>30){
+          skewEl.style.display='block';
+          skewEl.textContent=`⚠ Clock skew: server is ${newOff>0?'+':''}${Math.round(newOff)}s vs browser — times may be inaccurate`;
+        } else {
+          skewEl.style.display='none';
+        }
+      }
+    }
     if(d.station_coords)Object.assign(sCoords,d.station_coords);
     // stations
     const sDiv=document.getElementById('stations');
@@ -400,10 +456,27 @@ function _updateBody(d){
       const coord=sCoords[k]?`${sCoords[k][0].toFixed(2)}°N ${sCoords[k][1].toFixed(2)}°E`:'coords unknown';
       const cardTitle=`${k}\n${coord}\nconf: ${s.conf.toFixed(4)}\nlast sample: ${fmtLocal(new Date(s.last_ts*1000).toISOString())}`;
       const barTitle=`threshold: ${window.SEISMIC_CONFIG.threshold} | current: ${s.conf.toFixed(3)}`;
+      // Sparkline from conf_history
+      const hist=s.conf_history||[];
+      let sparkSvg='';
+      if(hist.length>1){
+        const W=80,H=20,thr=window.SEISMIC_CONFIG.threshold;
+        const pts=hist.slice(-80);
+        const mn=0,mx=Math.max(1,Math.max(...pts));
+        const xs=i=>Math.round(i*(W-1)/(pts.length-1));
+        const ys=v=>Math.round(H-1-(v-mn)/(mx-mn)*(H-1));
+        const polyline=pts.map((v,i)=>`${xs(i)},${ys(v)}`).join(' ');
+        const thrY=ys(thr);
+        sparkSvg=`<svg width="${W}" height="${H}" style="display:block;margin-top:3px" viewBox="0 0 ${W} ${H}">`
+          +`<line x1="0" y1="${thrY}" x2="${W}" y2="${thrY}" stroke="#d29922" stroke-width="0.5" stroke-dasharray="2,2"/>`
+          +`<polyline points="${polyline}" fill="none" stroke="${col}" stroke-width="1" stroke-linejoin="round"/>`
+          +`</svg>`;
+      }
       sHtml+=`<div class="station" title="${cardTitle}">
         <div class="sta-row"><span class="sta-name">${k}</span>
         <span class="sta-conf" style="color:${col}">${s.conf.toFixed(3)}</span></div>
         <div class="conf-bar" title="${barTitle}"><div class="conf-fill" style="width:${pct}%;background:${col}"></div></div>
+        ${sparkSvg}
         <div style="color:#6e7681;font-size:10px">${coord} &mdash; ${fmtAge(s.last_ts)} ago</div>
       </div>`;
       if(sCoords[k] && !staMarkers[k]){
@@ -460,8 +533,38 @@ function _updateBody(d){
     if(sumEl&&dets.length){
       const ld=dets[0];
       const mbStr=ld.mb!=null?(ld.mb_local?'local':ld.mb_approx?`mb~${ld.mb.toFixed(1)}`:`mb=${ld.mb.toFixed(1)}`):'mb…';
-      sumEl.textContent=`Last: ${mbStr} · ${fmtAge(ld.unix_ts)} ago`;
+      const age=fmtAge(ld.unix_ts);
+      sumEl.textContent=`Last: ${mbStr} · ${age==='—'?'future?':age} ago`;
     }
+    // Wire replay controls to current filtered det list
+    const _replayBtn=document.getElementById('replay-btn');
+    if(_replayBtn&&!_replayBtn._wired){
+      _replayBtn._wired=true;
+      _replayBtn.addEventListener('click',()=>{
+        if(_replayActive){_replayStop();return;}
+        _replayStart(filteredDets);
+      });
+    }
+    const _scrub=document.getElementById('replay-scrub');
+    if(_scrub&&!_scrub._wired){
+      _scrub._wired=true;
+      _scrub.addEventListener('input',()=>{
+        const sorted=[...filteredDets].sort((a,b)=>a.unix_ts-b.unix_ts);
+        const det=sorted[parseInt(_scrub.value)];
+        if(!det)return;
+        selectedDetTs=det.ts;
+        applyRowSelection();
+        const row=document.querySelector(`.det[data-ts="${CSS.escape(det.ts)}"]`);
+        if(row)row.scrollIntoView({behavior:'smooth',block:'center'});
+        if(det.epicenter||(det.usgs&&det.usgs.lat!=null)){
+          const la=det.usgs&&det.usgs.lat!=null?det.usgs.lat:det.epicenter[0];
+          const lo=det.usgs&&det.usgs.lon!=null?det.usgs.lon:det.epicenter[1];
+          map.flyTo([la,lo],5,{duration:0.6,easeLinearity:0.5});
+          map.once('moveend',()=>applyMarkerSelection());
+        }
+      });
+    }
+    if(_scrub)_scrub.max=Math.max(0,filteredDets.length-1);
     if(!dets.length){dDiv.innerHTML='<div class="no-data">No detections yet</div>';return}
     const escAttr=s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
     const mbChipClass=mb=>mb>=5?'chip-mb-high':mb>=4?'chip-mb-mid':'chip-mb-low';

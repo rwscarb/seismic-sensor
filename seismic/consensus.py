@@ -7,6 +7,7 @@ import numpy as np
 from seismic.config import (
     CHANNELS, N_CONSENSUS, CONSENSUS_WINDOW, THRESHOLD, ALERT_COOLDOWN,
     P_LEAD_S, MB_DELAY_S, MAG_MAX_CREDIBLE, LOC_MIN_STA, fmt_mag,
+    PER_STATION_COOLDOWN,
 )
 from seismic.runtime import get_threshold
 from seismic.localize import locate_epicenter, station_coords
@@ -21,6 +22,7 @@ station_first_arr = {}   # key → float or None (first P-arrival timestamp, cor
 
 recent_detections = collections.deque()
 last_alert = [0.0]
+_station_last_alert: dict = {}  # key → float (unix time of last alert involving this station)
 suppressed_mag_count = [0]
 suppressed_mag_last_report = [0.0]
 SUPPRESSED_REPORT_INTERVAL = 60.0
@@ -67,8 +69,15 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
         recent_detections.append((now, key, conf, mag_est))
         consensus_met, stations_fired = check_consensus(now)
 
-        if consensus_met and now - last_alert[0] > ALERT_COOLDOWN:
+        # Per-station cooldown: skip if *all* newly-fired stations have alerted recently
+        _sta_cooled = all(
+            now - _station_last_alert.get(k, 0.0) < PER_STATION_COOLDOWN
+            for k in stations_fired
+        )
+        if consensus_met and now - last_alert[0] > ALERT_COOLDOWN and not _sta_cooled:
             last_alert[0] = now
+            for _k in stations_fired:
+                _station_last_alert[_k] = now
             mag_consensus = (
                 float(np.mean([r[3] for r in recent_detections if r[1] in stations_fired]))
                 if recent_detections else mag_est

@@ -1,10 +1,11 @@
+import collections
 import dataclasses
 import json
 import os
 import threading
 import time
 
-from seismic.config import DETECTIONS_PATH, SERVER_START_TIME
+from seismic.config import DETECTIONS_PATH, SERVER_START_TIME, CONF_HISTORY_DEPTH
 
 MAX_DETECTIONS = 2000  # in-memory ring size; all are returned to UI
 
@@ -81,10 +82,15 @@ class SensorState:
         self._lock = threading.Lock()
         self.stations: dict = {}    # key → StationSnap
         self.detections: list = []  # DetectionSnap, oldest first
+        self._conf_history: dict = {}  # key → deque of recent conf floats
 
     def update_station(self, key, conf, mag_est):
         with self._lock:
             self.stations[key] = StationSnap(conf=conf, mag_est=mag_est, last_ts=time.time())
+            # Append to per-station conf history ringbuffer
+            if key not in self._conf_history:
+                self._conf_history[key] = collections.deque(maxlen=CONF_HISTORY_DEPTH)
+            self._conf_history[key].append(round(conf, 4))
 
     def add_detection(self, det):
         with self._lock:
@@ -124,8 +130,13 @@ class SensorState:
 
     def to_dict(self):
         with self._lock:
+            stations_out = {}
+            for k, v in self.stations.items():
+                d = dataclasses.asdict(v)
+                d['conf_history'] = list(self._conf_history.get(k, []))
+                stations_out[k] = d
             return {
-                'stations': {k: dataclasses.asdict(v) for k, v in self.stations.items()},
+                'stations': stations_out,
                 'detections': [
                     {**dataclasses.asdict(d), 'stations': list(d.stations)}
                     for d in self.detections
