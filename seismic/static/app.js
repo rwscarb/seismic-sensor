@@ -42,6 +42,7 @@ if(_loadSettings().satOn)_applySat(true);
 const staMarkers={}, detMarkers=[];
 let sCoords=window.SEISMIC_CONFIG.sCoords;
 let lastFlyTs=null, lastFlyLat=null, lastFlyLon=null, selectedDetTs=null, _pulseIv=null, _pulsePhase=0;
+let _lastDets=[];
 let _pinnedMarker=null;
 function _pinMarker(m){
   if(_pinnedMarker&&_pinnedMarker!==m)_pinnedMarker.closeTooltip();
@@ -270,6 +271,69 @@ document.addEventListener('keydown',e=>{
   else if(e.key==='s'){_satBtn.click();}
 });
 let _pulseTs=null;
+// ── Epicenter visualization: station lines + P-wave ring ─────────────────────
+let _epiLines=[], _pWaveCircle=null, _pWaveRingIv=null;
+function _clearEpiViz(){
+  _epiLines.forEach(l=>map.removeLayer(l));
+  _epiLines=[];
+  if(_pWaveRingIv){clearInterval(_pWaveRingIv);_pWaveRingIv=null;}
+  if(_pWaveCircle){map.removeLayer(_pWaveCircle);_pWaveCircle=null;}
+}
+function _drawEpiViz(det,epicLat,epicLon){
+  _clearEpiViz();
+  if(!det)return;
+  const pVel=(window.SEISMIC_CONFIG.pVelKmS||8.0)*1000; // m/s
+  // Lines from each firing station to epicenter
+  (det.stations||[]).forEach(key=>{
+    const coord=sCoords[key];
+    if(!coord)return;
+    const line=L.polyline([[coord[0],coord[1]],[epicLat,epicLon]],{
+      color:'#58a6ff',weight:1.5,opacity:0.55,dashArray:'6,4',interactive:false
+    }).addTo(map);
+    _epiLines.push(line);
+  });
+  // Expanding P-wave ring anchored to detection time
+  const initR=Math.max(0,(_serverNow()-det.unix_ts)*pVel);
+  _pWaveCircle=L.circle([epicLat,epicLon],{
+    radius:initR,color:'#f85149',weight:1.5,
+    fillOpacity:0,opacity:0.75,interactive:false
+  }).addTo(map);
+  _pWaveRingIv=setInterval(()=>{
+    if(!_pWaveCircle)return;
+    const r=Math.max(0,(_serverNow()-det.unix_ts)*pVel);
+    _pWaveCircle.setRadius(r);
+    // Fade as ring expands past ~5000 km
+    const fade=Math.max(0,0.75-(r/5000000)*0.65);
+    _pWaveCircle.setStyle({opacity:fade});
+    if(r>20100000){clearInterval(_pWaveRingIv);_pWaveRingIv=null;
+      if(_pWaveCircle){map.removeLayer(_pWaveCircle);_pWaveCircle=null;}}
+  },100);
+}
+// Station card hover — pulse the map marker
+let _staHoverIv=null, _staHoverKey=null, _staHoverPhase=0;
+function _staHoverIn(key){
+  if(_staHoverIv){clearInterval(_staHoverIv);_staHoverIv=null;}
+  const m=staMarkers[key];
+  if(!m)return;
+  _staHoverKey=key;
+  _staHoverPhase=0;
+  m.openTooltip();
+  _staHoverIv=setInterval(()=>{
+    _staHoverPhase=(_staHoverPhase+0.18)%(2*Math.PI);
+    const p=Math.abs(Math.sin(_staHoverPhase));
+    m.setRadius(4+p*10);
+    m.setStyle({fillOpacity:0.55+p*0.45,weight:1+p*2.5});
+  },40);
+}
+function _staHoverOut(key){
+  if(_staHoverIv){clearInterval(_staHoverIv);_staHoverIv=null;}
+  _staHoverKey=null;
+  const m=staMarkers[key];
+  if(!m)return;
+  m.closeTooltip();
+  m.setRadius(4);
+  m.setStyle({fillOpacity:.9,weight:1});
+}
 // Zoom-scaled radius: full size at zoom ≥ 8, progressively smaller below that.
 function zoomR(base){
   const z=map.getZoom();
@@ -311,6 +375,8 @@ function applyRowSelection(){
 }
 function flyToEpi(lat,lon,ts){
   selectedDetTs=ts||null;
+  if(ts){const _det=_lastDets.find(d=>d.ts===ts);_drawEpiViz(_det,lat,lon);}
+  else{_clearEpiViz();}
   applyRowSelection();
   // Scroll selected row into view in detections panel
   if(ts){
@@ -466,6 +532,7 @@ function _replayStart(dets){
 // Replay button is wired per-update in _updateBody once filteredDets is available.
 
 function _updateBody(d){
+    if(d.detections)_lastDets=[...d.detections];
     const _now=new Date();
     const _localStr=_now.toLocaleTimeString('en',{timeZone:_activeTz(),hour:'2-digit',minute:'2-digit',second:'2-digit'})+' '+_tzAbbr();
     const _utcStr=_now.toLocaleTimeString('en',{timeZone:'UTC',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})+' UTC';
@@ -512,7 +579,7 @@ function _updateBody(d){
           +`</svg>`;
       }
       const flatline=s.flatline||false;
-      sHtml+=`<div class="station" title="${cardTitle}${flatline?'\n⚠ Flatline — zero variance, feed may be dead':''}" style="${flatline?'opacity:.55;border-left:2px solid #f85149':''}">
+      sHtml+=`<div class="station" title="${cardTitle}${flatline?'\n⚠ Flatline — zero variance, feed may be dead':''}" style="${flatline?'opacity:.55;border-left:2px solid #f85149':''}" onmouseenter="_staHoverIn('${k}')" onmouseleave="_staHoverOut('${k}')">
         <div class="sta-row"><span class="sta-name">${k}</span>
         ${flatline?'<span style="color:#f85149;font-size:9px;letter-spacing:.5px">FLAT</span>':''}
         <span class="sta-conf" style="color:${flatline?'#f85149':col}">${s.conf.toFixed(3)}</span></div>
@@ -540,6 +607,9 @@ function _updateBody(d){
       }
     });
     if(sDiv.innerHTML!==sHtml)sDiv.innerHTML=sHtml;
+    // Mirror station HTML into mobile tab panel
+    const _mobSta=document.getElementById('mobile-sta-panel');
+    if(_mobSta&&_mobSta.innerHTML!==sHtml)_mobSta.innerHTML=sHtml;
     // detections
     const dDiv=document.getElementById('detections');
     const dets=[...d.detections].reverse();
@@ -751,7 +821,7 @@ function _updateBody(d){
         ?`<div class="tip-loc-orig"><a href="#" onclick="event.preventDefault();event.stopPropagation();map.flyTo([${origLa},${origLo}],5,{duration:1.0})">sensor: ${origStr}</a></div>`
         :'';
       const tipHtml=`<div class="det-tip">`
-        +`<div class="tip-time">${fmtLocal(det.ts)}</div>`
+        +`<div class="tip-time">${fmtLocal(det.ts)} <span style="color:#6e7681">(${fmtAge(det.unix_ts)} ago)</span></div>`
         +`<div class="tip-mb ${mbClass}">${mbLabel}</div>`
         +`<div class="tip-stas">${det.stations.join(' · ')}</div>`
         +`<div class="tip-loc">${locStr}</div>`
@@ -791,6 +861,7 @@ function _updateBody(d){
         applyRowSelection();
         map.flyTo([la,lo],5,{duration:1.0,easeLinearity:0.5});
         map.once('moveend',()=>applyMarkerSelection());
+        _drawEpiViz(newestEpi,la,lo);
       }
     }
     // fullscreen overlay: station list + latest detection
@@ -838,6 +909,49 @@ function _pollBtcvm(){
   }).catch(()=>{});
 }
 _pollBtcvm();setInterval(_pollBtcvm,15000);
+// ── Mobile tab switcher ──────────────────────────────────────────────────────
+function _mobTab(which, btn){
+  document.querySelectorAll('.mob-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const dw=document.getElementById('detections-wrap');
+  const sp=document.getElementById('mobile-sta-panel');
+  if(which==='dets'){dw&&dw.classList.add('active');sp&&sp.classList.remove('active');}
+  else{sp&&sp.classList.add('active');dw&&dw.classList.remove('active');}
+}
+// ── Stations panel resize handle ─────────────────────────────────────────────
+(()=>{
+  const handle=document.getElementById('sta-resize-handle');
+  const grid=document.querySelector('.grid');
+  if(!handle||!grid)return;
+  const MIN_W=140, MAX_W=480;
+  const saved=parseInt(localStorage.getItem('staW'))||220;
+  grid.style.setProperty('--sta-w',saved+'px');
+  let dragging=false, startX=0, startW=0;
+  handle.addEventListener('mousedown',e=>{
+    dragging=true;
+    startX=e.clientX;
+    startW=parseInt(getComputedStyle(grid).getPropertyValue('--sta-w'))||220;
+    handle.classList.add('dragging');
+    document.body.style.cursor='col-resize';
+    document.body.style.userSelect='none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove',e=>{
+    if(!dragging)return;
+    const w=Math.max(MIN_W,Math.min(MAX_W,startW+(e.clientX-startX)));
+    grid.style.setProperty('--sta-w',w+'px');
+    map.invalidateSize();
+  });
+  document.addEventListener('mouseup',()=>{
+    if(!dragging)return;
+    dragging=false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor='';
+    document.body.style.userSelect='';
+    const w=parseInt(getComputedStyle(grid).getPropertyValue('--sta-w'))||220;
+    localStorage.setItem('staW',w);
+  });
+})();
 update();setInterval(update,3000);
 // Deep-link: ?det=<unix_ts> → highlight row, fly map to it, clear filters
 (()=>{

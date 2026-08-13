@@ -3,6 +3,7 @@ import threading
 import time
 
 from seismic.config import (
+    P_VEL_KM_S,
     WEB_PORT, THRESHOLD, N_CONSENSUS, STATIONS, ALL_STATIONS, SEEDLINK_SERVER,
     USGS_MIN_MAG, EMSC_MIN_MAG, UMAMI_SITE_ID, LOC_MIN_STA,
     CONSENSUS_WINDOW, USGS_SIG_MIN_MAG, SLACK_SIGNING_SECRET,
@@ -71,6 +72,7 @@ def start_web_server():
             umami_id=UMAMI_SITE_ID,
             station_coords_json=coords_json,
             mapbox_token=MAPBOX_TOKEN,
+            p_vel_km_s=P_VEL_KM_S,
         )
 
     @app.route('/health')

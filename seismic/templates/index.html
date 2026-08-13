@@ -14,7 +14,8 @@ window.SEISMIC_CONFIG={
   usgsMag:{{ usgs_min_mag }},
   emscMag:{{ emsc_min_mag }},
   sCoords:{{ station_coords_json|safe }},
-  mapboxToken:{{ mapbox_token|tojson }}
+  mapboxToken:{{ mapbox_token|tojson }},
+  pVelKmS:{{ p_vel_km_s }}
 };
 </script>
 <script defer src="//u.fib896.com/script.js" data-website-id="{{ umami_id }}"></script>
@@ -61,6 +62,7 @@ window.SEISMIC_CONFIG={
     <div class="panel-hdr" style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid #21262d"><h2 style="margin:0">Stations</h2><button id="sta-sort-btn" title="Toggle station sort order" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">A→Z</button></div>
     <div id="stations"></div>
   </div>
+  <div id="sta-resize-handle" title="Drag to resize stations panel"></div>
   <div id="map-wrap">
     <button id="fs-btn" title="Toggle fullscreen map">&#x26F6;</button>
     <div id="map"></div>
@@ -78,6 +80,12 @@ window.SEISMIC_CONFIG={
     </div>
   </div>
   <div class="right-col">
+    <div id="mobile-tabs">
+      <button class="mob-tab active" onclick="_mobTab('dets',this)">&#127937; Detections</button>
+      <button class="mob-tab" onclick="_mobTab('stas',this)">&#128225; Stations</button>
+    </div>
+    <div id="mobile-sta-panel"></div>
+    <div id="detections-wrap" class="active">
     <div class="panel-hdr" style="padding:8px 10px;border-bottom:1px solid #21262d;margin-bottom:0;gap:4px;flex-wrap:wrap"><h2>Detections</h2><span id="det-count" class="det-count"></span>
       <div style="display:flex;gap:4px;margin-left:auto;align-items:center;flex-shrink:0">
         <select id="mb-filter-sel" title="Minimum magnitude filter" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 5px;font-size:10px;cursor:pointer">
@@ -99,8 +107,9 @@ window.SEISMIC_CONFIG={
       <div id="detections"></div>
     </div>
     <div id="det-more" style="display:none;padding:6px 8px;border-top:1px solid #21262d"><button onclick="showMoreDets()" style="width:100%;background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:4px 10px;font-size:10px;cursor:pointer">&#8595; show older</button></div>
-  </div>
-</div>
+    </div><!-- /detections-wrap -->
+  </div><!-- /right-col -->
+</div><!-- /grid -->
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

@@ -15,12 +15,16 @@ import os
 import threading
 import time
 
+import sys
+
 from seismic.config import (
     SEEDLINK_SERVER, IRIS_SERVER, STATIONS, IRIS_STATIONS, ALL_STATIONS,
     TUI_MODE, CHANNELS, THRESHOLD, N_CONSENSUS, CONSENSUS_WINDOW,
     ALERT_COOLDOWN, P_VEL_KM_S, LOC_MIN_STA,
     CHECKPOINT_DIR, N_SEEDS, DEVICE, P_LEAD_S,
 )
+
+MOCK = os.environ.get('MOCK', '').lower() in ('1', 'true', 'yes')
 from seismic.consensus import init_station_state
 from seismic.localize import fetch_station_coords, station_coords, KNOWN_COORDS
 from seismic.model import load_ensemble, load_phasenet
@@ -98,15 +102,21 @@ if __name__ == '__main__':
     start_web_server()
     start_batch_scheduler()
 
-    # Phase 2: load ML models (slow — 15-30s; /health already answering above)
-    print("Seismic Detection Sensor (multi-station consensus + TDOA localization)", flush=True)
-    print(f"  model:   StreamingNet {N_SEEDS}-seed ensemble (H-{P_LEAD_S}s, mean-conf)", flush=True)
-    print(f"  device:  {DEVICE}", flush=True)
-    print(f"\nLoading checkpoints from {CHECKPOINT_DIR}...", flush=True)
-    models = load_ensemble()
-    print(f"  {N_SEEDS} models loaded.\n", flush=True)
-    print("Loading PhaseNet (SeisBench)...", flush=True)
-    load_phasenet()
+    if MOCK:
+        # Mock mode — no models, no SeedLink; synthetic events drive the real pipeline
+        print("Seismic Detection Sensor [MOCK MODE — no SeedLink, no ML models]", flush=True)
+        from seismic.mock import run_mock
+        run_mock()
+    else:
+        # Phase 2: load ML models (slow — 15-30s; /health already answering above)
+        print("Seismic Detection Sensor (multi-station consensus + TDOA localization)", flush=True)
+        print(f"  model:   StreamingNet {N_SEEDS}-seed ensemble (H-{P_LEAD_S}s, mean-conf)", flush=True)
+        print(f"  device:  {DEVICE}", flush=True)
+        print(f"\nLoading checkpoints from {CHECKPOINT_DIR}...", flush=True)
+        models = load_ensemble()
+        print(f"  {N_SEEDS} models loaded.\n", flush=True)
+        print("Loading PhaseNet (SeisBench)...", flush=True)
+        load_phasenet()
 
-    # Phase 3: connect to SeedLink and stream
-    run_sensor(models)
+        # Phase 3: connect to SeedLink and stream
+        run_sensor(models)

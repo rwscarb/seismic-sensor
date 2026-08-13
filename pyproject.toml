@@ -1,0 +1,31 @@
+[project]
+name = "seismic-sensor"
+version = "0.1.0"
+description = "Multi-station seismic detection sensor with TDOA epicenter localization"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "scipy",
+    "flask",
+    "obspy",
+    "seisbench",
+    "rich",
+    "bit",
+    # PyTorch CPU — override index below for GPU builds
+    "torch",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

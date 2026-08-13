@@ -90,13 +90,18 @@ if args.dry_run:
     print('\n--dry-run: stopping here.')
     sys.exit(0)
 
-# ── Train/eval split ──────────────────────────────────────────────────────────
+# ── Train/eval split (stratified) ───────────────────────────────────────────
 import random
-idxs = list(range(n_labeled))
-random.shuffle(idxs)
-split = max(1, int(n_labeled * args.eval_split))
-eval_idxs = idxs[:split]
-train_idxs = idxs[split:]
+pos_idxs = [i for i, l in enumerate(labels) if l == 1]
+neg_idxs = [i for i, l in enumerate(labels) if l == 0]
+random.shuffle(pos_idxs)
+random.shuffle(neg_idxs)
+split_p = max(1, int(len(pos_idxs) * args.eval_split))
+split_n = max(1, int(len(neg_idxs) * args.eval_split))
+eval_idxs  = pos_idxs[:split_p] + neg_idxs[:split_n]
+train_idxs = pos_idxs[split_p:] + neg_idxs[split_n:]
+print(f'  eval:  {split_p} positive + {split_n} negative/noise = {len(eval_idxs)}')
+print(f'  train: {len(pos_idxs)-split_p} positive + {len(neg_idxs)-split_n} negative/noise = {len(train_idxs)}')
 
 X_train = np.array([windows[i] for i in train_idxs])
 y_train = np.array([labels[i]  for i in train_idxs], dtype=np.int64)
@@ -154,13 +159,20 @@ for seed in range(n_seeds):
         model.load_state_dict(torch.load(ckpt_path, map_location='cpu'))
         print(f'  Loaded pretrained weights')
 
-    # Freeze encoder for first half of epochs, fine-tune all for second half
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    # Phase 1 (first half): freeze all but classifier head, higher LR
+    # Phase 2 (second half): unfreeze all, lower LR for fine-tuning
+    for p in model.parameters():
+        p.requires_grad = False
+    for p in model.cls.parameters():
+        p.requires_grad = True
+    for p in model.mag.parameters():
+        p.requires_grad = True
+    optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr)
     criterion = nn.CrossEntropyLoss()
 
     for epoch in range(args.epochs):
         if epoch == args.epochs // 2:
-            # Unfreeze all layers at midpoint
+            # Unfreeze all layers, drop LR for careful fine-tuning
             for p in model.parameters():
                 p.requires_grad = True
             optimizer = optim.Adam(model.parameters(), lr=args.lr * 0.1)
