@@ -64,7 +64,8 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 .chip-usgs{color:#a371f7;background:#1e1129}
 .chip-emsc{color:#39c5cf;background:#0d1f21}
 #left-panel{overflow-y:auto;min-height:0;margin-left:0!important}
-#sta-resize-handle{width:4px;cursor:col-resize;background:transparent;border-radius:2px;transition:background .15s;z-index:10;margin:0!important;align-self:stretch}
+#sta-resize-handle{width:4px;cursor:col-resize;background:transparent;border-radius:2px;transition:background .15s;z-index:10;margin:0!important;align-self:stretch;position:relative}
+#sta-resize-handle::after{content:'';position:absolute;top:0;bottom:0;left:-8px;right:-8px}
 #sta-resize-handle:hover,#sta-resize-handle.dragging{background:#58a6ff55}
 #map{height:100%;border-radius:4px;background:#000}
 #map-wrap{position:relative;border-radius:4px;overflow:hidden;min-height:0}
