@@ -297,6 +297,11 @@ function applyRowSelection(){
 function flyToEpi(lat,lon,ts){
   selectedDetTs=ts||null;
   applyRowSelection();
+  // Scroll selected row into view in detections panel
+  if(ts){
+    const row=document.querySelector(`.det[data-ts="${CSS.escape(ts)}"]`);
+    if(row)row.scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
   // Stop pulse before flight — setRadius during flyTo fights Leaflet's SVG transform
   if(_pulseIv){clearInterval(_pulseIv);_pulseIv=null;_pulseTs=null;}
   applyMarkerSelection();
@@ -408,20 +413,23 @@ function _replayStop(){
 function _replayStart(dets){
   if(!dets||!dets.length)return;
   _replayStop();
-  const sorted=[...dets].sort((a,b)=>a.unix_ts-b.unix_ts);
+  // Only replay detections that have a visible map marker (localized, non-teleseismic)
+  const sorted=[...dets]
+    .filter(d=>!d.teleseismic&&(d.epicenter||(d.usgs&&d.usgs.lat!=null)))
+    .sort((a,b)=>a.unix_ts-b.unix_ts);
+  if(!sorted.length)return;
   let idx=0;
   _replayActive=true;
   const btn=document.getElementById('replay-btn');
   if(btn)btn.textContent='⏹ stop';
+  const scrub=document.getElementById('replay-scrub');
+  if(scrub)scrub.max=Math.max(0,sorted.length-1);
   function _step(){
     if(idx>=sorted.length){_replayStop();return;}
     const det=sorted[idx++];
-    if(det.epicenter||( det.usgs&&det.usgs.lat!=null)){
-      const la=det.usgs&&det.usgs.lat!=null?det.usgs.lat:det.epicenter[0];
-      const lo=det.usgs&&det.usgs.lon!=null?det.usgs.lon:det.epicenter[1];
-      flyToEpi(la,lo,det.ts);
-    }
-    const scrub=document.getElementById('replay-scrub');
+    const la=det.usgs&&det.usgs.lat!=null?det.usgs.lat:det.epicenter[0];
+    const lo=det.usgs&&det.usgs.lon!=null?det.usgs.lon:det.epicenter[1];
+    flyToEpi(la,lo,det.ts);
     if(scrub){scrub.value=idx-1;scrub.title=det.ts;}
   }
   _step();
