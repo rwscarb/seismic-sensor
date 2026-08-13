@@ -7,10 +7,10 @@ build:
 	docker compose build --no-cache
 
 dev:
-	docker compose up
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 
 dev-mock:
-	MOCK=1 MOCK_EVENT_INTERVAL_S=30 docker compose up
+	MOCK=1 MOCK_EVENT_INTERVAL_S=30 docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 
 down:
 	docker compose down

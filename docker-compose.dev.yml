@@ -1,0 +1,5 @@
+services:
+  seismic-sensor:
+    volumes:
+      - ./seismic/static:/app/seismic/static
+      - ./seismic/templates:/app/seismic/templates
