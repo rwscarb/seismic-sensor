@@ -3,3 +3,4 @@ services:
     volumes:
       - ./seismic/static:/app/seismic/static
       - ./seismic/templates:/app/seismic/templates
+      - ./fixtures/detections.json:/data/detections.json

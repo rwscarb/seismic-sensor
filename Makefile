@@ -38,6 +38,10 @@ data: ## Pull labeled training data from Fly volume → ./training/
 	mkdir -p training
 	fly ssh console -C "tar czf - /data/training" | tar xzf - --strip-components=2 -C training/
 
+fixtures: ## Pull detections.json from Fly → ./fixtures/ for local dev pre-seeding
+	mkdir -p fixtures
+	fly sftp get /data/detections.json fixtures/detections.json
+
 train: data ## Fine-tune StreamingNet on labeled data in ./training/
 	uv run python train.py --data training/ --checkpoints checkpoints/ $(TRAIN_ARGS)
 
