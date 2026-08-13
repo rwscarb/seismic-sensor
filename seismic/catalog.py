@@ -209,6 +209,8 @@ def report_usgs_deferred(det_unix, p_arrivals):
             fire_eew_alert(det_unix, event)
             from seismic.btcvm_anchor import anchor_confirmed  # noqa: PLC0415
             anchor_confirmed(det_unix, event)
+            from seismic.collector import label_detection  # noqa: PLC0415
+            label_detection(det_unix, station_key=None, label='positive')
             return
         time.sleep(_POLL_INTERVAL)
 
@@ -227,6 +229,10 @@ def report_usgs_deferred(det_unix, p_arrivals):
         fire_eew_alert(det_unix, event)
         from seismic.btcvm_anchor import anchor_confirmed  # noqa: PLC0415
         anchor_confirmed(det_unix, event)
+        from seismic.collector import label_detection  # noqa: PLC0415
+        label_detection(det_unix, station_key=None, label='positive')
     else:
         print(f"  [emsc {ts}] no EMSC match (M{EMSC_MIN_MAG}+ European window)", flush=True)
         sensor_state.update_usgs(det_unix, None)
+        from seismic.collector import label_detection  # noqa: PLC0415
+        label_detection(det_unix, station_key=None, label='negative')

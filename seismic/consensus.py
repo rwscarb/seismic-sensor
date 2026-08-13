@@ -173,6 +173,16 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
             )
             sensor_state.add_detection(det_rec)
 
+            # Save labeled training windows for each firing station
+            from seismic.collector import save_detection_window  # noqa: PLC0415
+            from seismic.seedlink import _last_stalta  # noqa: PLC0415
+            for _k in stations_fired:
+                save_detection_window(
+                    station_key=_k, unix_ts=now, conf=conf,
+                    logit_gap=logit_gap,
+                    stalta_ratio=_last_stalta.get(_k, 0.0),
+                )
+
             from seismic.btcvm_anchor import anchor_detection  # noqa: PLC0415
             anchor_detection(det_rec)
 

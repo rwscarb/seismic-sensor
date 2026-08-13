@@ -81,6 +81,11 @@ def start_web_server():
     def state():
         data = sensor_state.to_dict()
         data['station_coords'] = {k: list(v) for k, v in station_coords.items()}
+        try:
+            from seismic.collector import collection_stats  # noqa: PLC0415
+            data['training'] = collection_stats()
+        except Exception:
+            pass
         return jsonify(data)
 
     @app.route('/api/btcvm')

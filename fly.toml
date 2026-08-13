@@ -28,6 +28,8 @@ primary_region = 'fra'
   IRIS_STATIONS    = ''
   SEISBENCH_CACHE_ROOT = '/data/seisbench'
   APP_URL              = 'https://seismic.fib896.com'
+  TRAINING_DIR         = '/data/training'
+  COLLECT              = '1'
 
 [deploy]
   strategy     = "rolling"
