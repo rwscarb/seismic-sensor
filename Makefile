@@ -32,19 +32,15 @@ deploy: ## Smart deploy — static/template-only changes push via sftp (no resta
 		fly deploy; \
 	else \
 		echo "Static/template files only — uploading directly (no restart)..."; \
-		echo "$$CHANGED" | while IFS= read -r f; do \
-			[ -f "$$f" ] || continue; \
-			echo "  sftp → /app/$$f"; \
-			fly sftp put "$$f" "/app/$$f"; \
-		done; \
+		tar czf - seismic/static/app.js seismic/static/app.css seismic/templates/index.html \
+			| fly ssh console -C "tar xzf - -C /app"; \
 		echo "Done. Changes live without restart."; \
 	fi
 
 deploy-static: ## Force-push static/template files to running container (no restart)
-	@for f in seismic/static/app.js seismic/static/app.css seismic/templates/index.html; do \
-		echo "  sftp → /app/$$f"; \
-		fly sftp put "$$f" "/app/$$f"; \
-	done
+	tar czf - seismic/static/app.js seismic/static/app.css seismic/templates/index.html \
+		| fly ssh console -C "tar xzf - -C /app"
+	@echo "Static files deployed (no restart)."
 
 deploy-clean:
 	fly deploy --no-cache

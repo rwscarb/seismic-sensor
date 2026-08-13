@@ -309,12 +309,14 @@ function _drawEpiViz(det,epicLat,epicLon){
     const p2=map.latLngToContainerPoint([epicLat,epicLon]);
     let ang=Math.atan2(p2.y-p1.y,p2.x-p1.x)*180/Math.PI;
     if(ang>90)ang-=180; if(ang<-90)ang+=180;
+    const iW=Math.round(label.length*7), iH=16;
     const lm=L.marker([labelLat,labelLon],{
       interactive:false,
       icon:L.divIcon({
         className:'',
-        html:`<div style="transform:translate(-50%,-50%) rotate(${ang.toFixed(1)}deg);color:#c9d1d9;font-size:11px;font-weight:500;letter-spacing:.3px;text-shadow:0 0 4px #0d1117,0 0 4px #0d1117,0 0 6px #0d1117;white-space:nowrap;pointer-events:none">${label}</div>`,
-        iconAnchor:[0,0]
+        iconSize:[iW,iH],
+        iconAnchor:[iW/2,iH/2],
+        html:`<div style="width:${iW}px;height:${iH}px;display:flex;align-items:center;justify-content:center;transform:rotate(${ang.toFixed(1)}deg);color:#c9d1d9;font-size:11px;font-weight:500;letter-spacing:.3px;text-shadow:0 0 4px #0d1117,0 0 4px #0d1117,0 0 6px #0d1117;white-space:nowrap;pointer-events:none">${label}</div>`
       })
     }).addTo(map);
     _epiLines.push(lm);
