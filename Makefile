@@ -1,4 +1,4 @@
-.PHONY: build dev down logs restart deploy data train lint shell
+.PHONY: build dev down logs restart deploy deploy-static deploy-clean data fixtures train lint shell
 
 include .env
 export
@@ -22,8 +22,29 @@ restart:
 	docker compose restart
 
 # Fly.io
-deploy:
-	fly deploy
+deploy: ## Smart deploy — static/template-only changes push via sftp (no restart); else full fly deploy
+	@CHANGED=$$(git diff HEAD --name-only; git diff --cached --name-only); \
+	if [ -z "$$CHANGED" ]; then \
+		echo "Nothing staged or modified vs HEAD — running full deploy anyway"; \
+		fly deploy; \
+	elif echo "$$CHANGED" | grep -qvE '^seismic/(static|templates)/'; then \
+		echo "Non-static files changed — full deploy"; \
+		fly deploy; \
+	else \
+		echo "Static/template files only — uploading directly (no restart)..."; \
+		echo "$$CHANGED" | while IFS= read -r f; do \
+			[ -f "$$f" ] || continue; \
+			echo "  sftp → /app/$$f"; \
+			fly sftp put "$$f" "/app/$$f"; \
+		done; \
+		echo "Done. Changes live without restart."; \
+	fi
+
+deploy-static: ## Force-push static/template files to running container (no restart)
+	@for f in seismic/static/app.js seismic/static/app.css seismic/templates/index.html; do \
+		echo "  sftp → /app/$$f"; \
+		fly sftp put "$$f" "/app/$$f"; \
+	done
 
 deploy-clean:
 	fly deploy --no-cache

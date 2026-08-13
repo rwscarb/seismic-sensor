@@ -695,7 +695,7 @@ function _updateBody(d){
         }
       });
     }
-    if(_scrub)_scrub.max=Math.max(0,filteredDets.length-1);
+    if(_scrub){_scrub.max=Math.max(0,filteredDets.length-1);_scrub.value=_scrub.max;}
     _updateReplayTicks(filteredDets);
     if(!dets.length){dDiv.innerHTML='<div class="no-data">No detections yet</div>';return}
     const escAttr=s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
