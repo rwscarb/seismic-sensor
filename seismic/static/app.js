@@ -418,7 +418,7 @@ function flyToEpi(lat,lon,ts){
   // Stop pulse before flight — setRadius during flyTo fights Leaflet's SVG transform
   if(_pulseIv){clearInterval(_pulseIv);_pulseIv=null;_pulseTs=null;}
   applyMarkerSelection(true);  // style only — no pulse until map settles
-  map.flyTo([lat,lon],5,{duration:1.0,easeLinearity:0.5});
+  map.flyTo([lat,lon],3,{duration:1.0,easeLinearity:0.5});
   map.once('moveend',()=>{applyMarkerSelection();});  // now start pulse
   // Update URL so this view is bookmarkable/shareable (includes filter state)
   const row=ts?document.querySelector(`.det[data-ts="${CSS.escape(ts)}"]`):null;
@@ -717,7 +717,7 @@ function _updateBody(d){
         if(det.epicenter||(det.usgs&&det.usgs.lat!=null)){
           const la=det.usgs&&det.usgs.lat!=null?det.usgs.lat:det.epicenter[0];
           const lo=det.usgs&&det.usgs.lon!=null?det.usgs.lon:det.epicenter[1];
-          map.flyTo([la,lo],5,{duration:0.6,easeLinearity:0.5});
+          map.flyTo([la,lo],3,{duration:0.6,easeLinearity:0.5});
           map.once('moveend',()=>applyMarkerSelection());
         }
       });
@@ -866,7 +866,7 @@ function _updateBody(d){
       const origLo=hasOrig?det.epicenter[1]:null;
       const origStr=hasOrig?`${Math.abs(origLa).toFixed(2)}°${origLa>=0?'N':'S'} ${Math.abs(origLo).toFixed(2)}°${origLo>=0?'E':'W'}`:'';
       const origLink=hasOrig
-        ?`<div class="tip-loc-orig"><a href="#" onclick="event.preventDefault();event.stopPropagation();map.flyTo([${origLa},${origLo}],5,{duration:1.0})">sensor: ${origStr}</a></div>`
+        ?`<div class="tip-loc-orig"><a href="#" onclick="event.preventDefault();event.stopPropagation();map.flyTo([${origLa},${origLo}],3,{duration:1.0})">sensor: ${origStr}</a></div>`
         :'';
       const tipHtml=`<div class="det-tip">`
         +`<div class="tip-time">${fmtLocal(det.ts)} <span style="color:#6e7681">(${fmtAge(det.unix_ts)} ago)</span></div>`
@@ -907,7 +907,7 @@ function _updateBody(d){
         lastFlyTs=newestEpi.ts; lastFlyLat=la; lastFlyLon=lo;
         selectedDetTs=newestEpi.ts;
         applyRowSelection();
-        map.flyTo([la,lo],5,{duration:1.0,easeLinearity:0.5});
+        map.flyTo([la,lo],3,{duration:1.0,easeLinearity:0.5});
         map.once('moveend',()=>applyMarkerSelection());
         _drawEpiViz(newestEpi,la,lo);
       }
@@ -1045,7 +1045,7 @@ update();setInterval(update,3000);
         const ts=row.dataset.ts;
         if(ts){
           const m=detMarkers.find(x=>x.ts===ts);
-          if(m){const ll=m.m.getLatLng();map.flyTo([ll.lat,ll.lng],5,{duration:1.2,easeLinearity:0.5});}
+          if(m){const ll=m.m.getLatLng();map.flyTo([ll.lat,ll.lng],3,{duration:1.2,easeLinearity:0.5});}
         }
         return;
       }

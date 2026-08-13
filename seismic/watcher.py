@@ -1,4 +1,5 @@
 import json
+import os
 import time
 
 from seismic.config import (
@@ -13,7 +14,25 @@ from seismic.state import sensor_state  # noqa: F401 — used for update_usgs ov
 # at our stations and checks whether sensor_state.detections contains a match.
 # Logs [DETECTED] or [MISSED] and optionally Slacks the result.
 
-_sig_seen: set = set()   # event IDs already processed this run
+_SIG_SEEN_PATH = os.environ.get('SIG_SEEN_PATH', '/data/sig_seen.json')
+
+def _load_sig_seen() -> set:
+    try:
+        with open(_SIG_SEEN_PATH) as f:
+            return set(json.load(f))
+    except (FileNotFoundError, Exception):
+        return set()
+
+def _save_sig_seen(seen: set) -> None:
+    try:
+        tmp = _SIG_SEEN_PATH + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(list(seen), f)
+        os.replace(tmp, _SIG_SEEN_PATH)
+    except Exception as e:
+        print(f'  [sig-watch] could not save seen set: {e}', flush=True)
+
+_sig_seen: set = _load_sig_seen()   # event IDs already processed (persisted across restarts)
 
 
 def _expected_p_arrival(event_lat, event_lon, event_unix):
@@ -109,6 +128,7 @@ def poll_usgs_significant():
                 if eid in _sig_seen:
                     continue
                 _sig_seen.add(eid)
+                _save_sig_seen(_sig_seen)
                 p = feat['properties']
                 c = feat['geometry']['coordinates']
                 mag = p.get('mag', 0)
