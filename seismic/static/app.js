@@ -278,6 +278,7 @@ document.addEventListener('keydown',e=>{
 let _pulseTs=null;
 // ── Epicenter visualization: station lines + P-wave ring ─────────────────────
 let _epiLines=[], _pWaveCircle=null, _pWaveRingIv=null;
+let _epiVizDet=null, _epiVizLat=null, _epiVizLon=null;
 function _clearEpiViz(){
   _epiLines.forEach(l=>map.removeLayer(l));
   _epiLines=[];
@@ -287,6 +288,7 @@ function _clearEpiViz(){
 function _drawEpiViz(det,epicLat,epicLon){
   _clearEpiViz();
   if(!det)return;
+  _epiVizDet=det; _epiVizLat=epicLat; _epiVizLon=epicLon;
   const pVel=(window.SEISMIC_CONFIG.pVelKmS||8.0)*1000; // m/s
   // Lines from each firing station to epicenter, with arrival-offset labels
   const offsets=det.arrival_offsets||{};
@@ -297,16 +299,22 @@ function _drawEpiViz(det,epicLat,epicLon){
       color:'#58a6ff',weight:1.5,opacity:0.55,dashArray:'6,4',interactive:false
     }).addTo(map);
     _epiLines.push(line);
+    // Label: 20% from epi toward station, rotated parallel to line
     const dt=offsets[key];
-    const timing=dt==null?'':(dt===0?' · first':` · ${dt>0?'+':''}${dt.toFixed(1)}s`);
+    const timing=dt==null?'':(dt===0?' (first)':` (${dt>0?'+':''}${dt.toFixed(1)}s)`);
     const label=`${key}${timing}`;
-    const midLat=(coord[0]+epicLat)/2, midLon=(coord[1]+epicLon)/2;
-    const lm=L.marker([midLat,midLon],{
+    const labelLat=epicLat+0.2*(coord[0]-epicLat);
+    const labelLon=epicLon+0.2*(coord[1]-epicLon);
+    const p1=map.latLngToContainerPoint([coord[0],coord[1]]);
+    const p2=map.latLngToContainerPoint([epicLat,epicLon]);
+    let ang=Math.atan2(p2.y-p1.y,p2.x-p1.x)*180/Math.PI;
+    if(ang>90)ang-=180; if(ang<-90)ang+=180;
+    const lm=L.marker([labelLat,labelLon],{
       interactive:false,
       icon:L.divIcon({
         className:'',
-        html:`<div style="background:rgba(13,17,23,.8);color:#8b949e;font-size:9px;padding:1px 5px;border-radius:3px;white-space:nowrap;border:1px solid #30363d;pointer-events:none">${label}</div>`,
-        iconAnchor:[0,8]
+        html:`<div style="transform:translate(-50%,-50%) rotate(${ang.toFixed(1)}deg);background:rgba(13,17,23,.88);color:#c9d1d9;font-size:10px;line-height:15px;padding:0 5px;border-radius:2px;white-space:nowrap;pointer-events:none">${label}</div>`,
+        iconAnchor:[0,0]
       })
     }).addTo(map);
     _epiLines.push(lm);
@@ -385,7 +393,10 @@ function applyMarkerSelection(skipPulse){
   });
   if(!selectedDetTs&&_pulseIv){clearInterval(_pulseIv);_pulseIv=null;_pulseTs=null;}
 }
-map.on('zoomend',()=>applyMarkerSelection());
+map.on('zoomend',()=>{
+  applyMarkerSelection();
+  if(_epiVizDet&&_epiVizLat!=null)_drawEpiViz(_epiVizDet,_epiVizLat,_epiVizLon);
+});
 function applyRowSelection(){
   document.querySelectorAll('.det[data-ts]').forEach(el=>{
     if(el.dataset.ts===selectedDetTs)el.classList.add('det-selected');
@@ -395,7 +406,7 @@ function applyRowSelection(){
 function flyToEpi(lat,lon,ts){
   selectedDetTs=ts||null;
   if(ts){const _det=_lastDets.find(d=>d.ts===ts);_drawEpiViz(_det,lat,lon);}
-  else{_clearEpiViz();}
+  else{_clearEpiViz();_epiVizDet=null;_epiVizLat=null;_epiVizLon=null;}
   applyRowSelection();
   // Scroll selected row into view in detections panel
   if(ts){
