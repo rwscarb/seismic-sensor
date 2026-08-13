@@ -73,6 +73,7 @@ function _pollLogs(){
 }
 setInterval(_pollLogs,1500);
 let filterConfirmed=false, filterMinMb=0, filterLocal=false, detDisplayLimit=20;
+let staSortMode=_loadSettings().staSortMode||'name'; // 'name' | 'conf'
 const _mbPendingNotify=new Set(); // ts values awaiting mb before firing desktop notification
 // Persist settings to localStorage
 const _SETTINGS_KEY='seismic_settings';
@@ -151,6 +152,19 @@ _faultsBtn.addEventListener('click',async()=>{
 _faultsBtn.click();
 function showMoreDets(){detDisplayLimit+=50;}
 (()=>{
+  const staSortBtn=document.getElementById('sta-sort-btn');
+  function _applyStaSort(){
+    staSortBtn.textContent=staSortMode==='name'?'A→Z':'conf↓';
+    staSortBtn.style.color=staSortMode==='conf'?'#d29922':'#6e7681';
+    staSortBtn.style.borderColor=staSortMode==='conf'?'#d29922':'#30363d';
+  }
+  _applyStaSort();
+  if(staSortBtn) staSortBtn.addEventListener('click',()=>{
+    staSortMode=staSortMode==='name'?'conf':'name';
+    _applyStaSort();
+    _saveSettings({staSortMode});
+    update();
+  });
   const btn=document.getElementById('filter-btn');
   if(btn) btn.addEventListener('click',()=>{
     filterConfirmed=!filterConfirmed;
@@ -474,7 +488,8 @@ function _updateBody(d){
     // stations
     const sDiv=document.getElementById('stations');
     let sHtml='';
-    Object.entries(d.stations).sort((a,b)=>b[1].conf-a[1].conf).forEach(([k,s])=>{
+    const _staSorted=Object.entries(d.stations).sort((a,b)=>staSortMode==='name'?a[0].localeCompare(b[0]):b[1].conf-a[1].conf);
+    _staSorted.forEach(([k,s])=>{
       const pct=Math.round(s.conf*100);
       const col=confColor(s.conf);
       const coord=sCoords[k]?`${sCoords[k][0].toFixed(2)}°N ${sCoords[k][1].toFixed(2)}°E`:'coords unknown';
@@ -782,7 +797,7 @@ function _updateBody(d){
     const fsoSta=document.getElementById('fso-stations');
     const fsoDet=document.getElementById('fso-det');
     if(fsoSta){
-      fsoSta.innerHTML=Object.entries(d.stations).sort((a,b)=>b[1].conf-a[1].conf).map(([k,s])=>{
+      fsoSta.innerHTML=Object.entries(d.stations).sort((a,b)=>staSortMode==='name'?a[0].localeCompare(b[0]):b[1].conf-a[1].conf).map(([k,s])=>{
         const col=confColor(s.conf);
         const pct=Math.round(s.conf*100);
         return `<div class="fso-sta"><span style="color:#58a6ff">${k}</span><span style="color:${col}">${s.conf.toFixed(3)}</span></div>
