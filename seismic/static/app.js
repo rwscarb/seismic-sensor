@@ -288,7 +288,8 @@ function _drawEpiViz(det,epicLat,epicLon){
   _clearEpiViz();
   if(!det)return;
   const pVel=(window.SEISMIC_CONFIG.pVelKmS||8.0)*1000; // m/s
-  // Lines from each firing station to epicenter
+  // Lines from each firing station to epicenter, with arrival-offset labels
+  const offsets=det.arrival_offsets||{};
   (det.stations||[]).forEach(key=>{
     const coord=sCoords[key];
     if(!coord)return;
@@ -296,6 +297,20 @@ function _drawEpiViz(det,epicLat,epicLon){
       color:'#58a6ff',weight:1.5,opacity:0.55,dashArray:'6,4',interactive:false
     }).addTo(map);
     _epiLines.push(line);
+    if(key in offsets){
+      const dt=offsets[key];
+      const label=dt===0?'first':(dt>0?`+${dt.toFixed(1)}s`:`${dt.toFixed(1)}s`);
+      const midLat=(coord[0]+epicLat)/2, midLon=(coord[1]+epicLon)/2;
+      const lm=L.marker([midLat,midLon],{
+        interactive:false,
+        icon:L.divIcon({
+          className:'',
+          html:`<div style="background:rgba(13,17,23,.8);color:#8b949e;font-size:9px;padding:1px 5px;border-radius:3px;white-space:nowrap;border:1px solid #30363d;pointer-events:none">${label}</div>`,
+          iconAnchor:[0,8]
+        })
+      }).addTo(map);
+      _epiLines.push(lm);
+    }
   });
   // Expanding P-wave ring anchored to detection time
   const initR=Math.max(0,(_serverNow()-det.unix_ts)*pVel);

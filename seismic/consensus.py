@@ -163,6 +163,13 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
 
             print(f"{'='*60}\n", flush=True)
 
+            # Relative arrival offsets: 0.0 = first station, positive = later
+            _arr_times = {k: t for k, t in p_arr_snapshot.items() if k in stations_fired}
+            _arr_offsets = None
+            if _arr_times:
+                _min_t = min(_arr_times.values())
+                _arr_offsets = {k: round(t - _min_t, 1) for k, t in _arr_times.items()}
+
             det_rec = DetectionSnap(
                 ts=ts, unix_ts=now,
                 stations=sorted(stations_fired),
@@ -170,6 +177,7 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
                 logit_gap=logit_gap,
                 epicenter=epicenter_latlon,
                 teleseismic=is_teleseismic if epicenter_latlon else False,
+                arrival_offsets=_arr_offsets,
             )
             sensor_state.add_detection(det_rec)
 

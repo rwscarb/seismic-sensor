@@ -34,6 +34,7 @@ class DetectionSnap:
     teleseismic: bool = False  # True when locator RMS > threshold → distant source, pin unreliable
     usgs: dict = None         # USGS ComCat event if matched
     usgs_checked: bool = False  # True once USGS lookup has completed (match or not)
+    arrival_offsets: dict = None  # station_key → seconds after earliest P-arrival (0.0 = first)
 
     def __post_init__(self):
         if self.stations is None:
@@ -69,6 +70,7 @@ def _load_detections():
                 teleseismic=r.get('teleseismic', False),
                 usgs=r.get('usgs'),
                 usgs_checked=r.get('usgs_checked', False),
+                arrival_offsets=r.get('arrival_offsets'),
             )
             dets.append(d)
         print(f"[persist] loaded {len(dets)} detections from {DETECTIONS_PATH}", flush=True)
