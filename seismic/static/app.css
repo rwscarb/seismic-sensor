@@ -19,7 +19,10 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 .panel-hdr{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
 .panel-hdr h2{font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:1px}
 .det-count{font-size:10px;color:#6e7681;background:#21262d;border-radius:8px;padding:1px 6px}
-.station{padding:6px 0;border-bottom:1px solid #21262d}
+.station{padding:6px 0;border-bottom:1px solid #21262d;cursor:default}
+.spark-wrap{position:relative;margin-top:3px}
+.spark-wrap svg{margin-top:0!important;display:block}
+.spark-cursor{position:absolute;top:0;bottom:0;width:1px;background:#58a6ff99;pointer-events:none;display:none}
 .station:last-child{border-bottom:none}
 .sta-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
 .sta-name{color:#58a6ff;font-weight:bold}

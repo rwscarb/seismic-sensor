@@ -578,10 +578,10 @@ function _updateBody(d){
         const ys=v=>(H-1-(v-mn)/(mx-mn)*(H-1)).toFixed(1);
         const polyline=pts.map((v,i)=>`${xs(i)},${ys(v)}`).join(' ');
         const thrY=ys(thr);
-        sparkSvg=`<svg width="100%" height="${H}" style="display:block;margin-top:3px" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`
+        sparkSvg=`<div class="spark-wrap"><svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`
           +`<line x1="0" y1="${thrY}" x2="${W}" y2="${thrY}" stroke="#d29922" stroke-width="0.7" stroke-dasharray="3,2"/>`
           +`<polyline points="${polyline}" fill="none" stroke="${col}" stroke-width="1.2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`
-          +`</svg>`;
+          +`</svg><div class="spark-cursor"></div></div>`;
       }
       const flatline=s.flatline||false;
       sHtml+=`<div class="station" title="${cardTitle}${flatline?'\n⚠ Flatline — zero variance, feed may be dead':''}" style="${flatline?'opacity:.55;border-left:2px solid #f85149':''}" onmouseenter="_staHoverIn('${k}')" onmouseleave="_staHoverOut('${k}')">
@@ -955,6 +955,23 @@ function _mobTab(which, btn){
     document.body.style.userSelect='';
     const w=parseInt(getComputedStyle(grid).getPropertyValue('--sta-w'))||220;
     localStorage.setItem('staW',w);
+  });
+})();
+// Synchronized sparkline crosshair
+(()=>{
+  const staPanel=document.getElementById('stations');
+  if(!staPanel)return;
+  staPanel.addEventListener('mousemove',e=>{
+    document.querySelectorAll('.spark-wrap').forEach(wrap=>{
+      const rect=wrap.getBoundingClientRect();
+      if(!rect.width)return;
+      const x=Math.max(0,Math.min(rect.width,e.clientX-rect.left));
+      const c=wrap.querySelector('.spark-cursor');
+      if(c){c.style.left=x+'px';c.style.display='block';}
+    });
+  });
+  staPanel.addEventListener('mouseleave',()=>{
+    document.querySelectorAll('.spark-cursor').forEach(c=>c.style.display='none');
   });
 })();
 update();setInterval(update,3000);
