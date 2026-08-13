@@ -394,9 +394,15 @@ function applyMarkerSelection(skipPulse){
   });
   if(!selectedDetTs&&_pulseIv){clearInterval(_pulseIv);_pulseIv=null;_pulseTs=null;}
 }
-map.on('zoomend',()=>{
+let _epiRedrawTimer=null;
+function _scheduleEpiRedraw(){
+  if(!_epiVizDet||_epiVizLat==null)return;
+  clearTimeout(_epiRedrawTimer);
+  _epiRedrawTimer=setTimeout(()=>_drawEpiViz(_epiVizDet,_epiVizLat,_epiVizLon),80);
+}
+map.on('zoomend moveend',()=>{
   applyMarkerSelection();
-  if(_epiVizDet&&_epiVizLat!=null)_drawEpiViz(_epiVizDet,_epiVizLat,_epiVizLon);
+  _scheduleEpiRedraw();
 });
 function applyRowSelection(){
   document.querySelectorAll('.det[data-ts]').forEach(el=>{
@@ -832,7 +838,7 @@ function _updateBody(d){
     }).join('');
     if(dDiv.innerHTML!==newHtml)dDiv.innerHTML=newHtml;
     // epicenter markers — diff by ts; force-recreate when USGS coords arrive after initial placement
-    const epiDets=d.detections.filter(det=>!det.teleseismic&&(det.epicenter||(det.usgs&&det.usgs.lat!=null)));
+    const epiDets=filteredDets.filter(det=>!det.teleseismic&&(det.epicenter||(det.usgs&&det.usgs.lat!=null)));
     const epiTsSet=new Set(epiDets.map(det=>det.ts));
     const keptTs=new Set();
     // remove stale markers or those whose coordinates have changed (watcher override)
