@@ -266,11 +266,11 @@ function _markerBaseStyle(usgs,dimmed){
   if(usgs) return {color:'#7048aa',weight:1.5,fillColor:'#a371f7',fillOpacity:dimmed?.25:.85,dashArray:null};
   return {color:'#6e3010',weight:1,fillColor:'#f85149',fillOpacity:dimmed?.15:.5,dashArray:'5,3'};
 }
-function applyMarkerSelection(){
+function applyMarkerSelection(skipPulse){
   detMarkers.forEach(({m,ts,r,usgs})=>{
     if(ts===selectedDetTs){
       m.setStyle({color:'#2ea043',weight:1.5,fillColor:'#3fb950',fillOpacity:.95,dashArray:null});
-      if(_pulseTs!==selectedDetTs){
+      if(!skipPulse&&_pulseTs!==selectedDetTs){
         if(_pulseIv){clearInterval(_pulseIv);_pulseIv=null;}
         _pulseTs=selectedDetTs;_pulsePhase=0;
         _pulseIv=setInterval(()=>{
@@ -304,9 +304,9 @@ function flyToEpi(lat,lon,ts){
   }
   // Stop pulse before flight — setRadius during flyTo fights Leaflet's SVG transform
   if(_pulseIv){clearInterval(_pulseIv);_pulseIv=null;_pulseTs=null;}
-  applyMarkerSelection();
+  applyMarkerSelection(true);  // style only — no pulse until map settles
   map.flyTo([lat,lon],5,{duration:1.0,easeLinearity:0.5});
-  map.once('moveend',()=>{applyMarkerSelection();});
+  map.once('moveend',()=>{applyMarkerSelection();});  // now start pulse
   // Update URL so this view is bookmarkable/shareable (includes filter state)
   const row=ts?document.querySelector(`.det[data-ts="${CSS.escape(ts)}"]`):null;
   const unixTs=row?row.dataset.unixTs:null;
