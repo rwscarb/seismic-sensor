@@ -59,9 +59,9 @@ ALERT_COOLDOWN = float(os.environ.get('ALERT_COOLDOWN', '60.0'))
 PER_STATION_COOLDOWN = float(os.environ.get('PER_STATION_COOLDOWN', '120.0'))  # min gap between alerts for same station
 CONF_HISTORY_DEPTH = int(os.environ.get('CONF_HISTORY_DEPTH', '120'))  # samples of conf history kept per station
 NOISE_PERSIST_S = float(os.environ.get('NOISE_PERSIST_S', '45.0'))  # exclude station from consensus if above threshold continuously this long
-N_CONSENSUS = int(os.environ.get('N_CONSENSUS', '4'))           # raised from 2→4 to reduce noise hits
+N_CONSENSUS = int(os.environ.get('N_CONSENSUS', '2'))           # 2 = appropriate for sparse 5-station network
 CONSENSUS_WINDOW = float(os.environ.get('CONSENSUS_WINDOW', '60.0'))  # tightened from 120→60s
-MIN_LOGIT_GAP = float(os.environ.get('MIN_LOGIT_GAP', '0.5'))  # min mean logit gap across consensus stations
+MIN_LOGIT_GAP = float(os.environ.get('MIN_LOGIT_GAP', '0.0'))  # 0.0 = disabled until we have empirical baseline from real events
 STALTA_ON = os.environ.get('STALTA_ON', '1').lower() not in ('0', 'false', 'no')  # STA/LTA pre-filter
 STALTA_SHORT_S = float(os.environ.get('STALTA_SHORT_S', '0.5'))   # STA window (s)
 STALTA_LONG_S = float(os.environ.get('STALTA_LONG_S', '10.0'))    # LTA window (s)
