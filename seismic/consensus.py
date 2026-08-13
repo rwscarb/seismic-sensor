@@ -164,7 +164,11 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
             print(f"{'='*60}\n", flush=True)
 
             # Relative arrival offsets: 0.0 = first station, positive = later
-            _arr_times = {k: t for k, t in p_arr_snapshot.items() if k in stations_fired}
+            # Cap at CONSENSUS_WINDOW so stale arrivals from prior events are excluded
+            _arr_times = {
+                k: t for k, t in p_arr_snapshot.items()
+                if k in stations_fired and abs(t - now) <= CONSENSUS_WINDOW
+            }
             _arr_offsets = None
             if _arr_times:
                 _min_t = min(_arr_times.values())
