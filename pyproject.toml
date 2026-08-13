@@ -29,3 +29,7 @@ torch = [
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
+
+[tool.ruff.lint.per-file-ignores]
+# MOCK must be set before seismic imports (modules read it at import time)
+"sensor.py" = ["E402"]
