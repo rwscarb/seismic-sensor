@@ -1,4 +1,4 @@
-.PHONY: build dev down logs restart deploy data train shell
+.PHONY: build dev down logs restart deploy data train lint shell
 
 include .env
 export
@@ -40,6 +40,9 @@ data: ## Pull labeled training data from Fly volume → ./training/
 
 train: data ## Fine-tune StreamingNet on labeled data in ./training/
 	uv run python train.py --data training/ --checkpoints checkpoints/ $(TRAIN_ARGS)
+
+lint: ## Run ruff check
+	uv run ruff check .
 
 shell:
 	docker compose exec seismic-sensor bash

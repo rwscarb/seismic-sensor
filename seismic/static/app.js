@@ -229,7 +229,12 @@ function fmtLocal(isoStr){
   if(!sel)return;
   sel.value=_userTz;
   if(!sel.value)sel.value='auto';
-  sel.addEventListener('change',()=>{_userTz=sel.value;localStorage.setItem('tz',_userTz);update();});
+  sel.addEventListener('change',()=>{
+    _userTz=sel.value;localStorage.setItem('tz',_userTz);
+    detMarkers.forEach(({m})=>map.removeLayer(m));
+    detMarkers.length=0;
+    update();
+  });
 })();
 // fullscreen toggle — uses browser Fullscreen API (hides browser chrome like F11)
 const _fsBtn=document.getElementById('fs-btn');
