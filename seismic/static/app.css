@@ -65,12 +65,21 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 #left-panel{overflow-y:auto;min-height:0}
 #map{height:100%;border-radius:4px;background:#000}
 #map-wrap{position:relative;border-radius:4px;overflow:hidden;min-height:0}
-#event-log{position:absolute;bottom:24px;right:10px;z-index:400;width:480px;max-height:200px;overflow-y:auto;pointer-events:auto;background:rgba(13,17,23,0.55);border:1px solid #21262d;border-radius:4px;padding:4px 0}
+#event-log{position:absolute;bottom:24px;right:10px;z-index:400;width:480px;max-height:200px;overflow-y:auto;pointer-events:auto;background:rgba(13,17,23,0.75);border:1px solid #21262d;border-radius:4px;padding:4px 0;backdrop-filter:blur(3px)}
 #event-log .elog{font-size:10.5px;font-family:monospace;color:#8b949e;padding:1px 8px;white-space:pre-wrap;word-break:break-all;line-height:1.5}
 #event-log .elog.elog-det{color:#f85149;border-left:2px solid #f85149;padding-left:6px}
 #event-log .elog.elog-usgs{color:#3fb950;border-left:2px solid #3fb950;padding-left:6px}
 #event-log .elog.elog-sta{color:#8b949e}
 #event-log .elog.elog-info{color:#6e7681}
+/* Satellite mode — brighter text + stronger backdrop so logs are legible over imagery */
+body.sat-mode #event-log{background:rgba(0,0,0,0.82);border-color:#444;backdrop-filter:blur(4px)}
+body.sat-mode #event-log .elog{color:#d0d7de;text-shadow:0 1px 2px rgba(0,0,0,.9)}
+body.sat-mode #event-log .elog.elog-det{color:#ff6b6b;text-shadow:0 1px 3px rgba(0,0,0,1)}
+body.sat-mode #event-log .elog.elog-usgs{color:#56d364;text-shadow:0 1px 3px rgba(0,0,0,1)}
+body.sat-mode #event-log .elog.elog-sta{color:#b0bec5;text-shadow:0 1px 2px rgba(0,0,0,.9)}
+body.sat-mode #event-log .elog.elog-info{color:#8b9ba8;text-shadow:0 1px 2px rgba(0,0,0,.8)}
+/* Fullscreen — event log above detections panel */
+body.fs-mode #event-log{z-index:1002;right:350px;bottom:14px}
 .right-col{display:flex;flex-direction:column;min-height:0;background:#161b22;border:1px solid #30363d;border-radius:6px;overflow:hidden}
 .no-data{color:#6e7681;font-style:italic;font-size:11px}
 /* fullscreen map */

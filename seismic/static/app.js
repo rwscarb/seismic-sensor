@@ -22,6 +22,7 @@ let _satOn=false;
 const _satBtn=document.getElementById('sat-btn');
 function _applySat(on){
   _satOn=on;
+  document.body.classList.toggle('sat-mode',on);
   if(_satOn){
     map.removeLayer(_darkLayer);
     _satBase.addTo(map);
