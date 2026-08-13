@@ -147,3 +147,8 @@ body.fs-mode #fs-overlay{display:block}
   /* Hide replay scrub bar on narrow */
   #replay-bar{display:none}
 }
+/* ── Very small viewports (folded phones, ≤ 480px) ──────────────────────── */
+@media(max-width:480px){
+  #event-log{display:none}
+  #map-legend{display:none}
+}
