@@ -313,7 +313,7 @@ function _drawEpiViz(det,epicLat,epicLon){
       interactive:false,
       icon:L.divIcon({
         className:'',
-        html:`<div style="transform:translate(-50%,-50%) rotate(${ang.toFixed(1)}deg);background:rgba(13,17,23,.88);color:#c9d1d9;font-size:12px;line-height:17px;padding:1px 6px;border-radius:2px;white-space:nowrap;pointer-events:none">${label}</div>`,
+        html:`<div style="transform:translate(-50%,-50%) rotate(${ang.toFixed(1)}deg);color:#c9d1d9;font-size:11px;font-weight:500;letter-spacing:.3px;text-shadow:0 0 4px #0d1117,0 0 4px #0d1117,0 0 6px #0d1117;white-space:nowrap;pointer-events:none">${label}</div>`,
         iconAnchor:[0,0]
       })
     }).addTo(map);
