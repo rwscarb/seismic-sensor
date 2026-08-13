@@ -695,6 +695,7 @@ function _updateBody(d){
       });
     }
     if(_scrub)_scrub.max=Math.max(0,filteredDets.length-1);
+    _updateReplayTicks(filteredDets);
     if(!dets.length){dDiv.innerHTML='<div class="no-data">No detections yet</div>';return}
     const escAttr=s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
     const mbChipClass=mb=>mb>=5?'chip-mb-high':mb>=4?'chip-mb-mid':'chip-mb-low';
