@@ -297,6 +297,8 @@ function applyRowSelection(){
 function flyToEpi(lat,lon,ts){
   selectedDetTs=ts||null;
   applyRowSelection();
+  // Stop pulse before flight — setRadius during flyTo fights Leaflet's SVG transform
+  if(_pulseIv){clearInterval(_pulseIv);_pulseIv=null;_pulseTs=null;}
   applyMarkerSelection();
   map.flyTo([lat,lon],5,{duration:1.0,easeLinearity:0.5});
   map.once('moveend',()=>{applyMarkerSelection();});
