@@ -7,7 +7,7 @@ import numpy as np
 from seismic.config import (
     CHANNELS, N_CONSENSUS, CONSENSUS_WINDOW, THRESHOLD, ALERT_COOLDOWN,
     P_LEAD_S, MB_DELAY_S, MAG_MAX_CREDIBLE, LOC_MIN_STA, fmt_mag,
-    PER_STATION_COOLDOWN, NOISE_PERSIST_S,
+    PER_STATION_COOLDOWN, NOISE_PERSIST_S, MIN_LOGIT_GAP,
 )
 from seismic.runtime import get_threshold
 from seismic.localize import locate_epicenter, station_coords
@@ -90,7 +90,7 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
         if station_first_arr[key] is None:
             station_first_arr[key] = now + P_LEAD_S
 
-        recent_detections.append((now, key, conf, mag_est))
+        recent_detections.append((now, key, conf, mag_est, logit_gap))
         consensus_met, stations_fired = check_consensus(now)
 
         # Per-station cooldown: skip if *all* newly-fired stations have alerted recently
@@ -98,7 +98,10 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
             now - _station_last_alert.get(k, 0.0) < PER_STATION_COOLDOWN
             for k in stations_fired
         )
-        if consensus_met and now - last_alert[0] > ALERT_COOLDOWN and not _sta_cooled:
+        # Logit gap gate — low gap = model uncertain; require minimum mean gap across firing stations
+        _gap_vals = [r[4] for r in recent_detections if r[1] in stations_fired]
+        _gap_ok = bool(_gap_vals) and float(np.mean(_gap_vals)) >= MIN_LOGIT_GAP
+        if consensus_met and now - last_alert[0] > ALERT_COOLDOWN and not _sta_cooled and _gap_ok:
             last_alert[0] = now
             for _k in stations_fired:
                 _station_last_alert[_k] = now
@@ -106,6 +109,7 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
                 float(np.mean([r[3] for r in recent_detections if r[1] in stations_fired]))
                 if recent_detections else mag_est
             )
+            mean_gap = float(np.mean([r[4] for r in recent_detections if r[1] in stations_fired])) if recent_detections else 0.0
             recent_detections.clear()
 
             # Snapshot arrivals before reset (needed for deferred mb thread)
@@ -121,7 +125,7 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
             print(f"\n{'='*60}", flush=True)
             print(f"  DETECTION  {ts}", flush=True)
             print(f"  Stations:   {station_list}  ({len(stations_fired)}/{N_CONSENSUS} consensus)", flush=True)
-            print(f"  Confidence: {conf:.4f}  (threshold={THRESHOLD})", flush=True)
+            print(f"  Confidence: {conf:.4f}  (threshold={THRESHOLD})  gap={mean_gap:.2f}", flush=True)
             print(f"  Magnitude:  mb computing... (+{MB_DELAY_S:.0f}s)", flush=True)
             print(f"  Lead time:  +{P_LEAD_S}s before P-arrival", flush=True)
 
