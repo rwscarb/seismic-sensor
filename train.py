@@ -57,7 +57,8 @@ label_counts = {'positive': 0, 'negative': 0, 'noise': 0, 'pending': 0, 'other':
 for fpath in files:
     try:
         d = np.load(fpath, allow_pickle=True)
-        lbl = str(d['label'])
+        raw = d['label']
+        lbl = raw.item().decode() if isinstance(raw.item(), bytes) else str(raw.item())
         label_counts[lbl if lbl in label_counts else 'other'] += 1
         if lbl == 'pending':
             continue  # skip unlabeled
