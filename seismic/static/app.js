@@ -213,7 +213,7 @@ function fmtLocal(isoStr){
   if(!sel)return;
   sel.value=_userTz;
   if(!sel.value)sel.value='auto';
-  sel.addEventListener('change',()=>{_userTz=sel.value;localStorage.setItem('tz',_userTz);});
+  sel.addEventListener('change',()=>{_userTz=sel.value;localStorage.setItem('tz',_userTz);update();});
 })();
 // fullscreen toggle — uses browser Fullscreen API (hides browser chrome like F11)
 const _fsBtn=document.getElementById('fs-btn');
