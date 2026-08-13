@@ -404,9 +404,11 @@ function update(){
 }
 // ── Detection replay ─────────────────────────────────────────────────────────
 let _replayActive=false,_replayTs=null,_replayInterval=null;
+const _REPLAY_DWELL_MS=2500;  // how long to show tooltip after camera settles
 function _replayStop(){
-  if(_replayInterval){clearInterval(_replayInterval);_replayInterval=null;}
+  if(_replayInterval){clearTimeout(_replayInterval);_replayInterval=null;}
   _replayActive=false;
+  _unpinMarker();
   const btn=document.getElementById('replay-btn');
   if(btn)btn.textContent='▶ replay';
 }
@@ -425,15 +427,26 @@ function _replayStart(dets){
   const scrub=document.getElementById('replay-scrub');
   if(scrub)scrub.max=Math.max(0,sorted.length-1);
   function _step(){
+    if(!_replayActive)return;
     if(idx>=sorted.length){_replayStop();return;}
     const det=sorted[idx++];
     const la=det.usgs&&det.usgs.lat!=null?det.usgs.lat:det.epicenter[0];
     const lo=det.usgs&&det.usgs.lon!=null?det.usgs.lon:det.epicenter[1];
-    flyToEpi(la,lo,det.ts);
     if(scrub){scrub.value=idx-1;scrub.title=det.ts;}
+    flyToEpi(la,lo,det.ts);
+    // After camera settles, pin the tooltip, dwell, then advance
+    map.once('moveend',()=>{
+      if(!_replayActive)return;
+      // Find and pin the marker for this detection
+      const entry=detMarkers.find(x=>x.ts===det.ts);
+      if(entry)_pinMarker(entry.m);
+      _replayInterval=setTimeout(()=>{
+        _unpinMarker();
+        _step();
+      },_REPLAY_DWELL_MS);
+    });
   }
   _step();
-  _replayInterval=setInterval(_step,1800);
 }
 // Replay button is wired per-update in _updateBody once filteredDets is available.
 
