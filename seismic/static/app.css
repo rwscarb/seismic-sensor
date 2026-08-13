@@ -120,8 +120,9 @@ body.fs-mode #fs-overlay{display:block}
 }
 /* ── Narrow / mobile layout (Z Fold 6 folded ≈ 374px, phones ≤ 600px) ─────── */
 @media(max-width:600px){
-  header{padding:6px 10px;gap:6px;min-height:0;flex-wrap:nowrap;overflow-x:auto}
-  header h1{font-size:12px;white-space:nowrap}
+  header{padding:4px 10px;gap:4px;min-height:0;flex-wrap:wrap;overflow-x:hidden}
+  header h1{font-size:12px;white-space:nowrap;flex:1}
+  #header-controls{width:100%;justify-content:flex-end;flex-wrap:wrap;gap:3px}
   #cfg,#last-update{display:none}
   #last-event-summary{font-size:10px;border:none;padding:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px}
   header button,header select{padding:2px 5px;font-size:10px}

@@ -102,8 +102,9 @@ window.SEISMIC_CONFIG={
         <button id="replay-btn" title="Replay detections on map in chronological order" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">&#9654; replay</button>
       </div>
     </div>
-    <div id="replay-bar" style="padding:0 8px 4px;display:flex;align-items:center;gap:6px;border-bottom:1px solid #21262d">
-      <input type="range" id="replay-scrub" min="0" max="0" value="0" style="flex:1;accent-color:#58a6ff;cursor:pointer" title="Scrub through detections">
+    <div id="replay-bar" style="padding:0 8px 4px;display:flex;flex-direction:column;gap:2px;border-bottom:1px solid #21262d">
+      <input type="range" id="replay-scrub" min="0" max="0" value="0" style="flex:1;width:100%;accent-color:#58a6ff;cursor:pointer;margin:0" title="Scrub through detections">
+      <div id="replay-ticks" style="position:relative;height:6px;width:100%"></div>
     </div>
     <div style="flex:1;overflow-y:auto;min-height:0">
       <div id="detections"></div>

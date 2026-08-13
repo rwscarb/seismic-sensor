@@ -488,6 +488,20 @@ function update(){
     try{_updateBody(d);}catch(e){console.error('[seismic] update error:',e);}
   }).catch(()=>{document.getElementById('status-dot').style.background='#f85149'});
 }
+// ── Replay tick marks ────────────────────────────────────────────────────────
+function _updateReplayTicks(dets){
+  const el=document.getElementById('replay-ticks');
+  if(!el)return;
+  const sorted=[...dets].sort((a,b)=>a.unix_ts-b.unix_ts);
+  const n=sorted.length;
+  if(n<2){el.innerHTML='';return;}
+  const frag=sorted.map((det,i)=>{
+    const pct=(i/(n-1)*100).toFixed(2);
+    const color=det.usgs?'#a371f7':det.epicenter?'#58a6ff':'#4e545c';
+    return `<div style="position:absolute;left:${pct}%;top:0;width:1px;height:6px;background:${color};transform:translateX(-50%)"></div>`;
+  }).join('');
+  el.innerHTML=frag;
+}
 // ── Detection replay ─────────────────────────────────────────────────────────
 let _replayActive=false,_replayTs=null,_replayInterval=null;
 const _REPLAY_DWELL_MS=2500;  // how long to show tooltip after camera settles
