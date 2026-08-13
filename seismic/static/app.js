@@ -495,8 +495,9 @@ function _updateReplayTicks(dets){
   const sorted=[...dets].sort((a,b)=>a.unix_ts-b.unix_ts);
   const n=sorted.length;
   if(n<2){el.innerHTML='';return;}
-  const frag=sorted.map((det,i)=>{
-    const pct=(i/(n-1)*100).toFixed(2);
+  const minT=sorted[0].unix_ts, maxT=sorted[n-1].unix_ts, span=maxT-minT||1;
+  const frag=sorted.map(det=>{
+    const pct=((det.unix_ts-minT)/span*100).toFixed(2);
     const color=det.usgs?'#a371f7':det.epicenter?'#58a6ff':'#4e545c';
     return `<div style="position:absolute;left:${pct}%;top:0;width:1px;height:6px;background:${color};transform:translateX(-50%)"></div>`;
   }).join('');
