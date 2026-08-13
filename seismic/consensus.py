@@ -77,6 +77,15 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
             sensor_state.update_station(key, conf, mag_est)
             return
 
+        # Flatline check — zero-variance conf history means stuck/dead feed
+        if sensor_state.is_flatline(key):
+            if now - station_status[key] > 60.0:
+                ts_log = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now))
+                print(f"[{ts_log}] {key:<10} FLATLINE conf={conf:.3f} — excluded from consensus", flush=True)
+                station_status[key] = now
+            sensor_state.update_station(key, conf, mag_est)
+            return
+
         # Record first P-wave arrival (corrected for model pre-P horizon)
         if station_first_arr[key] is None:
             station_first_arr[key] = now + P_LEAD_S

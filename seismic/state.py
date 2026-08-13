@@ -7,6 +7,9 @@ import time
 
 from seismic.config import DETECTIONS_PATH, SERVER_START_TIME, CONF_HISTORY_DEPTH
 
+FLATLINE_VARIANCE_THRESH = 1e-5  # conf history variance below this = stuck/flatline
+FLATLINE_MIN_SAMPLES = 20        # need at least this many samples before declaring flatline
+
 MAX_DETECTIONS = 2000  # in-memory ring size; all are returned to UI
 
 
@@ -121,6 +124,23 @@ class SensorState:
             snap = list(self.detections)
         _save_detections(snap)
 
+    def is_flatline(self, key):
+        """Public lock-safe flatline check for use outside to_dict."""
+        with self._lock:
+            return self._is_flatline(key)
+
+    def _is_flatline(self, key, hist=None):
+        """Internal flatline check — call with lock held or pass hist explicitly."""
+        if hist is None:
+            hist = list(self._conf_history.get(key, []))
+        if len(hist) < FLATLINE_MIN_SAMPLES:
+            return False
+        import statistics
+        try:
+            return statistics.variance(hist) < FLATLINE_VARIANCE_THRESH
+        except Exception:
+            return False
+
     def get_detection(self, ref_unix):
         with self._lock:
             for det in reversed(self.detections):
@@ -133,7 +153,10 @@ class SensorState:
             stations_out = {}
             for k, v in self.stations.items():
                 d = dataclasses.asdict(v)
-                d['conf_history'] = list(self._conf_history.get(k, []))
+                hist = list(self._conf_history.get(k, []))
+                hist = list(self._conf_history.get(k, []))
+                d['conf_history'] = hist
+                d['flatline'] = self._is_flatline(k, hist)
                 stations_out[k] = d
             return {
                 'stations': stations_out,

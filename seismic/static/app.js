@@ -482,10 +482,12 @@ function _updateBody(d){
           +`<polyline points="${polyline}" fill="none" stroke="${col}" stroke-width="1.2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`
           +`</svg>`;
       }
-      sHtml+=`<div class="station" title="${cardTitle}">
+      const flatline=s.flatline||false;
+      sHtml+=`<div class="station" title="${cardTitle}${flatline?'\n⚠ Flatline — zero variance, feed may be dead':''}" style="${flatline?'opacity:.55;border-left:2px solid #f85149':''}">
         <div class="sta-row"><span class="sta-name">${k}</span>
-        <span class="sta-conf" style="color:${col}">${s.conf.toFixed(3)}</span></div>
-        <div class="conf-bar" title="${barTitle}"><div class="conf-fill" style="width:${pct}%;background:${col}"></div></div>
+        ${flatline?'<span style="color:#f85149;font-size:9px;letter-spacing:.5px">FLAT</span>':''}
+        <span class="sta-conf" style="color:${flatline?'#f85149':col}">${s.conf.toFixed(3)}</span></div>
+        <div class="conf-bar" title="${barTitle}"><div class="conf-fill" style="width:${pct}%;background:${flatline?'#f85149':col}"></div></div>
         ${sparkSvg}
         <div style="color:#6e7681;font-size:10px">${coord} &mdash; ${fmtAge(s.last_ts)} ago</div>
       </div>`;
