@@ -7,7 +7,7 @@ import numpy as np
 from seismic.config import (
     CHANNELS, N_CONSENSUS, CONSENSUS_WINDOW, THRESHOLD, ALERT_COOLDOWN,
     P_LEAD_S, MB_DELAY_S, MAG_MAX_CREDIBLE, LOC_MIN_STA, fmt_mag,
-    PER_STATION_COOLDOWN,
+    PER_STATION_COOLDOWN, NOISE_PERSIST_S,
 )
 from seismic.runtime import get_threshold
 from seismic.localize import locate_epicenter, station_coords
@@ -23,6 +23,7 @@ station_first_arr = {}   # key → float or None (first P-arrival timestamp, cor
 recent_detections = collections.deque()
 last_alert = [0.0]
 _station_last_alert: dict = {}  # key → float (unix time of last alert involving this station)
+_station_above_since: dict = {}  # key → float (unix time station first crossed threshold this run)
 suppressed_mag_count = [0]
 suppressed_mag_last_report = [0.0]
 SUPPRESSED_REPORT_INTERVAL = 60.0
@@ -62,6 +63,20 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
     sensor_state.update_station(key, conf, mag_est)
 
     if conf >= get_threshold():
+        # Track how long this station has been continuously above threshold
+        if key not in _station_above_since:
+            _station_above_since[key] = now
+        persist_s = now - _station_above_since[key]
+        noisy = persist_s > NOISE_PERSIST_S
+        if noisy:
+            # Station is stuck above threshold — treat as noise floor, don't feed consensus
+            if now - station_status[key] > 30.0:
+                ts_log = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now))
+                print(f"[{ts_log}] {key:<10} NOISY persist={persist_s:.0f}s conf={conf:.3f} — excluded from consensus", flush=True)
+                station_status[key] = now
+            sensor_state.update_station(key, conf, mag_est)
+            return
+
         # Record first P-wave arrival (corrected for model pre-P horizon)
         if station_first_arr[key] is None:
             station_first_arr[key] = now + P_LEAD_S
@@ -170,6 +185,8 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
             print(f"  [{ts}] {key} CANDIDATE conf={conf:.3f} mag={fmt_mag(mag_est)} "
                   f"(waiting for {n_waiting} more station(s))", flush=True)
     else:
+        # Station dropped below threshold — reset persistence timer
+        _station_above_since.pop(key, None)
         if now - station_status[key] > 10.0:
             if mag_est > MAG_MAX_CREDIBLE:
                 suppressed_mag_count[0] += 1

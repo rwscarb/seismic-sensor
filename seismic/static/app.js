@@ -438,9 +438,9 @@ function _updateBody(d){
       _serverClockOffset=newOff;
       const skewEl=document.getElementById('clock-skew-banner');
       if(skewEl){
-        if(Math.abs(newOff)>30){
+        if(Math.abs(newOff)>120){
           skewEl.style.display='block';
-          skewEl.textContent=`⚠ Clock skew: server is ${newOff>0?'+':''}${Math.round(newOff)}s vs browser — times may be inaccurate`;
+          skewEl.textContent=`⚠ Clock skew: server is ${newOff>0?'+':''}${Math.round(newOff)}s vs browser — check your local clock`;
         } else {
           skewEl.style.display='none';
         }
@@ -460,16 +460,16 @@ function _updateBody(d){
       const hist=s.conf_history||[];
       let sparkSvg='';
       if(hist.length>1){
-        const W=80,H=20,thr=window.SEISMIC_CONFIG.threshold;
-        const pts=hist.slice(-80);
+        const W=200,H=24,thr=window.SEISMIC_CONFIG.threshold;
+        const pts=hist.slice(-120);
         const mn=0,mx=Math.max(1,Math.max(...pts));
-        const xs=i=>Math.round(i*(W-1)/(pts.length-1));
-        const ys=v=>Math.round(H-1-(v-mn)/(mx-mn)*(H-1));
+        const xs=i=>((i/(pts.length-1))*W).toFixed(1);
+        const ys=v=>(H-1-(v-mn)/(mx-mn)*(H-1)).toFixed(1);
         const polyline=pts.map((v,i)=>`${xs(i)},${ys(v)}`).join(' ');
         const thrY=ys(thr);
-        sparkSvg=`<svg width="${W}" height="${H}" style="display:block;margin-top:3px" viewBox="0 0 ${W} ${H}">`
-          +`<line x1="0" y1="${thrY}" x2="${W}" y2="${thrY}" stroke="#d29922" stroke-width="0.5" stroke-dasharray="2,2"/>`
-          +`<polyline points="${polyline}" fill="none" stroke="${col}" stroke-width="1" stroke-linejoin="round"/>`
+        sparkSvg=`<svg width="100%" height="${H}" style="display:block;margin-top:3px" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`
+          +`<line x1="0" y1="${thrY}" x2="${W}" y2="${thrY}" stroke="#d29922" stroke-width="0.7" stroke-dasharray="3,2"/>`
+          +`<polyline points="${polyline}" fill="none" stroke="${col}" stroke-width="1.2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`
           +`</svg>`;
       }
       sHtml+=`<div class="station" title="${cardTitle}">
