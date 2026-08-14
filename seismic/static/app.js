@@ -502,22 +502,25 @@ function _drawEpiViz(det, epicLat, epicLon) {
     });
 
     const initR = Math.max(0, (_serverNow() - det.unix_ts) * pVelMs);
-    _pWaveCircle = L.circle([epicLat, epicLon], {
-        radius: initR, color: '#f85149', weight: 1.5, fillOpacity: 0, opacity: 0.75, interactive: false
-    }).addTo(map);
+    if (initR < 20100000) {
+        const initFade = Math.max(0, 0.75 - (initR / 5000000) * 0.65);
+        _pWaveCircle = L.circle([epicLat, epicLon], {
+            radius: initR, color: '#f85149', weight: 1.5, fillOpacity: 0, opacity: initFade, interactive: false
+        }).addTo(map);
 
-    _pWaveRingIv = setInterval(function () {
-        if (!_pWaveCircle) { return; }
-        const r = Math.max(0, (_serverNow() - det.unix_ts) * pVelMs);
-        _pWaveCircle.setRadius(r);
-        const fade = Math.max(0, 0.75 - (r / 5000000) * 0.65);
-        _pWaveCircle.setStyle({ opacity: fade });
-        if (r > 20100000) {
-            clearInterval(_pWaveRingIv);
-            _pWaveRingIv = null;
-            if (_pWaveCircle) { map.removeLayer(_pWaveCircle); _pWaveCircle = null; }
-        }
-    }, 100);
+        _pWaveRingIv = setInterval(function () {
+            if (!_pWaveCircle) { return; }
+            const r = Math.max(0, (_serverNow() - det.unix_ts) * pVelMs);
+            _pWaveCircle.setRadius(r);
+            const fade = Math.max(0, 0.75 - (r / 5000000) * 0.65);
+            _pWaveCircle.setStyle({ opacity: fade });
+            if (r > 20100000) {
+                clearInterval(_pWaveRingIv);
+                _pWaveRingIv = null;
+                if (_pWaveCircle) { map.removeLayer(_pWaveCircle); _pWaveCircle = null; }
+            }
+        }, 100);
+    }
 }
 
 function _scheduleEpiRedraw() {
