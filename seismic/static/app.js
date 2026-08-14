@@ -620,6 +620,7 @@ function applyRowSelection() {
 }
 
 function flyToEpi(lat, lon, ts) {
+    _unpinMarker();
     selectedDetTs = ts || null;
 
     // Clear epi viz immediately; store new coords for post-land redraw
@@ -650,6 +651,10 @@ function flyToEpi(lat, lon, ts) {
     map.once('moveend', function () {
         _mapFlying = false;
         applyMarkerSelection();
+        if (ts) {
+            const entry = detMarkers.find(function (x) { return x.ts === ts; });
+            if (entry) { _pinMarker(entry.m); }
+        }
         if (_epiVizDet) {
             clearTimeout(_epiRedrawTimer);
             _drawEpiViz(_epiVizDet, _epiVizLat, _epiVizLon);
