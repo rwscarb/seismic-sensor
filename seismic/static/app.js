@@ -1435,62 +1435,46 @@ function _mobTab(which, btn) {
 // ── Scoreboard ───────────────────────────────────────────────────────────────
 
 (function () {
-    const scoreBtn  = document.getElementById('score-btn');
-    const scoreBar  = document.getElementById('scoreboard-bar');
-    const scoreEl   = document.getElementById('scoreboard-content');
-    if (!scoreBtn || !scoreBar || !scoreEl) { return; }
-
-    let open = false;
+    const scoreEl = document.getElementById('scoreboard-content');
+    if (!scoreEl) { return; }
 
     function pct(n, d) { return d > 0 ? Math.round(n / d * 100) : '—'; }
     function col(v)     { return v >= 80 ? '#3fb950' : v >= 60 ? '#d29922' : '#f85149'; }
     function bar(v)     {
         const c = col(v);
-        return '<div style="display:inline-block;width:60px;height:5px;background:#21262d;border-radius:2px;vertical-align:middle;margin:0 4px">'
+        return '<div style="height:3px;background:#21262d;border-radius:2px;margin:2px 0 5px">'
             + '<div style="width:' + Math.min(100, v) + '%;height:100%;background:' + c + ';border-radius:2px"></div></div>';
     }
 
     function loadScoreboard() {
-        scoreEl.textContent = 'loading…';
         Promise.all([
             fetch('/api/scoreboard').then(function (r) { return r.json(); }),
             fetch('/api/recall').then(function (r) { return r.json(); })
         ]).then(function (results) {
             const sb = results[0], rc = results[1];
-            const precV  = pct(sb.confirmed || 0, sb.checked || 0);
-            const recV   = pct(rc.true_positives || 0, rc.usgs_events || 0);
-            const precC  = typeof precV === 'number' ? col(precV) : '#6e7681';
-            const recC   = typeof recV  === 'number' ? col(recV)  : '#6e7681';
+            const precV = pct(sb.confirmed || 0, sb.checked || 0);
+            const recV  = pct(rc.true_positives || 0, rc.usgs_events || 0);
+            const precC = typeof precV === 'number' ? col(precV) : '#6e7681';
+            const recC  = typeof recV  === 'number' ? col(recV)  : '#6e7681';
+            function row(label, v, vc, frac) {
+                return '<div style="display:flex;justify-content:space-between;align-items:baseline">'
+                    + '<span style="color:#8b949e">' + label + '</span>'
+                    + '<span style="color:' + vc + ';font-weight:600">' + (typeof v === 'number' ? v + '%' : v) + '</span>'
+                    + '</div>'
+                    + (typeof v === 'number' ? bar(v) : '')
+                    + '<div style="color:#6e7681;font-size:10px;margin-top:-3px;margin-bottom:6px">' + frac + '</div>';
+            }
             scoreEl.innerHTML =
-                '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">'
-                + '<span title="Precision: confirmed / total checked detections">'
-                +   '<span style="color:#8b949e">precision</span> '
-                +   '<span style="color:' + precC + ';font-weight:600">' + (typeof precV === 'number' ? precV + '%' : precV) + '</span>'
-                +   (typeof precV === 'number' ? bar(precV) : '')
-                +   '<span style="color:#6e7681;font-size:10px"> ' + (sb.confirmed || 0) + '/' + (sb.checked || 0) + '</span>'
-                + '</span>'
-                + '<span title="Recall: USGS events detected / total USGS events in window (7d ≥mb' + (rc.minmag || 4.5) + ')">'
-                +   '<span style="color:#8b949e">recall</span> '
-                +   '<span style="color:' + recC + ';font-weight:600">' + (typeof recV === 'number' ? recV + '%' : recV) + '</span>'
-                +   (typeof recV === 'number' ? bar(recV) : '')
-                +   '<span style="color:#6e7681;font-size:10px"> ' + (rc.true_positives || 0) + '/' + (rc.usgs_events || 0) + ' (' + (rc.days || 7) + 'd ≥mb' + (rc.minmag || 4.5) + ')</span>'
-                + '</span>'
-                + '<span style="color:#6e7681;font-size:10px;margin-left:auto">'
-                +   '<a href="/api/scoreboard" target="_blank" style="color:#6e7681;text-decoration:none">raw↗</a>'
-                + '</span>'
-                + '</div>';
+                row('precision', precV, precC, (sb.confirmed || 0) + '/' + (sb.checked || 0) + ' detections confirmed')
+                + row('recall', recV, recC, (rc.true_positives || 0) + '/' + (rc.usgs_events || 0) + ' USGS events caught (' + (rc.days || 7) + 'd ≥mb' + (rc.minmag || 4.5) + ')')
+                + '<a href="/api/scoreboard" target="_blank" style="color:#484f58;font-size:9px;text-decoration:none">raw ↗</a>';
         }).catch(function () {
-            scoreEl.textContent = 'failed to load — check /api/scoreboard and /api/recall';
+            scoreEl.innerHTML = '<span style="color:#484f58;font-size:10px">unavailable</span>';
         });
     }
 
-    scoreBtn.addEventListener('click', function () {
-        open = !open;
-        scoreBar.style.display = open ? 'block' : 'none';
-        scoreBtn.style.color        = open ? '#58a6ff' : '#6e7681';
-        scoreBtn.style.borderColor  = open ? '#58a6ff' : '#30363d';
-        if (open) { loadScoreboard(); }
-    });
+    loadScoreboard();
+    setInterval(loadScoreboard, 60000);
 }());
 
 
