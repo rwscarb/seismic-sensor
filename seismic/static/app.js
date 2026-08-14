@@ -532,7 +532,8 @@ function _scheduleEpiRedraw() {
     }, 80);
 }
 
-map.on('zoomend', function () { applyMarkerSelection(); });
+let _mapFlying = false;
+map.on('zoomend', function () { if (!_mapFlying) { applyMarkerSelection(); } });
 map.on('moveend',  function () { _scheduleEpiRedraw(); });
 
 
@@ -644,8 +645,10 @@ function flyToEpi(lat, lon, ts) {
     // Defer marker re-coloring until after the animation lands so the new
     // selection doesn't visibly fly across the screen during the pan.
     if (_pulseIv) { clearInterval(_pulseIv); _pulseIv = null; _pulseTs = null; }
+    _mapFlying = true;
     map.flyTo([lat, lon], FLY_ZOOM, { duration: FLY_DURATION, easeLinearity: 0.5 });
     map.once('moveend', function () {
+        _mapFlying = false;
         applyMarkerSelection();
         if (_epiVizDet) {
             clearTimeout(_epiRedrawTimer);
@@ -839,8 +842,9 @@ function _initReplayControls() {
             if (det.epicenter || (det.usgs && det.usgs.lat != null)) {
                 const la = det.usgs && det.usgs.lat != null ? det.usgs.lat : det.epicenter[0];
                 const lo = det.usgs && det.usgs.lon != null ? det.usgs.lon : det.epicenter[1];
+                _mapFlying = true;
                 map.flyTo([la, lo], FLY_ZOOM, { duration: 0.6, easeLinearity: 0.5 });
-                map.once('moveend', applyMarkerSelection);
+                map.once('moveend', function () { _mapFlying = false; applyMarkerSelection(); });
             }
         });
     }
@@ -1319,8 +1323,9 @@ function _updateBody(d) {
             lastFlyLon = lo;
             selectedDetTs = newestEpi.ts;
             applyRowSelection();
+            _mapFlying = true;
             map.flyTo([la, lo], FLY_ZOOM, { duration: FLY_DURATION, easeLinearity: 0.5 });
-            map.once('moveend', applyMarkerSelection);
+            map.once('moveend', function () { _mapFlying = false; applyMarkerSelection(); });
             _drawEpiViz(newestEpi, la, lo);
         }
     }
@@ -1509,6 +1514,9 @@ function _mobTab(which, btn) {
 // ── Startup ───────────────────────────────────────────────────────────────────
 
 _initReplayControls();
+if (window.SEISMIC_INITIAL_STATE) {
+    try { _updateBody(window.SEISMIC_INITIAL_STATE); } catch (e) { console.error('[seismic] inline state error:', e); }
+}
 update();
 setInterval(update, 3000);
 

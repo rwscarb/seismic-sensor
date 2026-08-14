@@ -8,6 +8,10 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+<style>
+@keyframes _skel-pulse{0%,100%{opacity:.35}50%{opacity:.7}}
+._skel{background:#21262d;border-radius:3px;animation:_skel-pulse 1.4s ease-in-out infinite}
+</style>
 <script>
 window.SEISMIC_CONFIG={
   threshold:{{ threshold }},
@@ -17,6 +21,7 @@ window.SEISMIC_CONFIG={
   mapboxToken:{{ mapbox_token|tojson }},
   pVelKmS:{{ p_vel_km_s }}
 };
+window.SEISMIC_INITIAL_STATE={{ initial_state_json|safe }};
 </script>
 <script defer src="//u.fib896.com/script.js" data-website-id="{{ umami_id }}"></script>
 </head>
@@ -62,7 +67,7 @@ window.SEISMIC_CONFIG={
 <div class="grid">
   <div class="panel" id="left-panel">
     <div class="panel-hdr" style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid #21262d"><h2 style="margin:0">Stations</h2><button id="sta-sort-btn" title="Toggle station sort order" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">A→Z</button></div>
-    <div id="stations"></div>
+    <div id="stations"><div style="padding:8px 10px;display:flex;flex-direction:column;gap:6px"><div class="_skel" style="height:44px;border-radius:4px"></div><div class="_skel" style="height:44px;border-radius:4px"></div><div class="_skel" style="height:44px;border-radius:4px"></div><div class="_skel" style="height:44px;border-radius:4px"></div></div></div>
     <div id="scoreboard-panel" style="border-top:1px solid #21262d;padding:10px 0 2px;font-size:11px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <span style="color:#6e7681;text-transform:uppercase;letter-spacing:.8px;font-size:9px">Score</span>
@@ -73,7 +78,7 @@ window.SEISMIC_CONFIG={
           <button class="score-win-btn" data-days="30" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:3px;padding:1px 5px;font-size:9px;cursor:pointer">30d</button>
         </div>
       </div>
-      <div id="scoreboard-content" style="color:#8b949e">loading…</div>
+      <div id="scoreboard-content" style="color:#8b949e"><div class="_skel" style="height:28px;border-radius:3px;margin-bottom:4px"></div><div class="_skel" style="height:28px;border-radius:3px"></div></div>
     </div>
   </div>
   <div id="sta-resize-handle" title="Drag to resize stations panel"></div>
@@ -119,7 +124,7 @@ window.SEISMIC_CONFIG={
       <div id="replay-ticks" style="position:relative;height:6px;width:100%"></div>
     </div>
     <div style="flex:1;overflow-y:auto;min-height:0">
-      <div id="detections"></div>
+      <div id="detections"><div style="padding:8px;display:flex;flex-direction:column;gap:5px"><div class="_skel" style="height:52px;border-radius:4px"></div><div class="_skel" style="height:52px;border-radius:4px"></div><div class="_skel" style="height:52px;border-radius:4px;opacity:.6"></div></div></div>
     </div>
     <div id="det-more" style="display:none;padding:6px 8px;border-top:1px solid #21262d"><button onclick="showMoreDets()" style="width:100%;background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:4px 10px;font-size:10px;cursor:pointer">&#8595; show older</button></div>
     </div><!-- /detections-wrap -->

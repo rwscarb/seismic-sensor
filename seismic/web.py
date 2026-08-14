@@ -29,6 +29,10 @@ def start_web_server():
     cfg_text = f"threshold {THRESHOLD} | {N_CONSENSUS}/{len(ALL_STATIONS)} consensus | {CONSENSUS_WINDOW:.0f}s window"
     app_title = f"{sta_list} | fra"
 
+    _recall_cache = {}   # {(days, minmag): (ts, result)}
+    _recall_lock  = threading.Lock()
+    _RECALL_TTL   = 60.0
+
     app = Flask(__name__)
     import logging
     from flask import request, Response
@@ -61,6 +65,13 @@ def start_web_server():
 
     @app.route('/')
     def index():
+        state_data = sensor_state.to_dict()
+        state_data['station_coords'] = {k: list(v) for k, v in station_coords.items()}
+        try:
+            from seismic.collector import collection_stats  # noqa: PLC0415
+            state_data['training'] = collection_stats()
+        except Exception:
+            pass
         return render_template(
             'index.html',
             app_title=app_title,
@@ -73,6 +84,7 @@ def start_web_server():
             station_coords_json=coords_json,
             mapbox_token=MAPBOX_TOKEN,
             p_vel_km_s=P_VEL_KM_S,
+            initial_state_json=json.dumps(state_data),
         )
 
     @app.route('/health')
@@ -178,16 +190,22 @@ def start_web_server():
           days   (float, default 7)   — look-back window
           minmag (float, default 4.5) — minimum USGS magnitude to include
 
-        Fetches all USGS events in the window and checks each against the
-        detection log, returning TP/FN counts and per-event breakdown.
-        Slow (~3s) due to live USGS query — do not call in tight loops.
+        Results are cached for _RECALL_TTL seconds to avoid hammering USGS.
         """
         from seismic.watcher import compute_recall_window
         days   = request.args.get('days',   default=7.0,  type=float)
         minmag = request.args.get('minmag', default=4.5,  type=float)
+        cache_key = (days, minmag)
+        now = time.time()
+        with _recall_lock:
+            cached = _recall_cache.get(cache_key)
+            if cached and now - cached[0] < _RECALL_TTL:
+                return jsonify(cached[1])
         result = compute_recall_window(days=days, minmag=minmag)
         if 'error' in result:
             return jsonify(result), 502
+        with _recall_lock:
+            _recall_cache[cache_key] = (now, result)
         return jsonify(result)
 
     @app.route('/api/localize', methods=['POST'])
