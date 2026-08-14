@@ -621,11 +621,14 @@ function applyRowSelection() {
 function flyToEpi(lat, lon, ts) {
     selectedDetTs = ts || null;
 
+    // Clear epi viz immediately; store new coords for post-land redraw
+    _clearEpiViz();
     if (ts) {
         const det = _lastDets.find(function (d) { return d.ts === ts; });
-        _drawEpiViz(det, lat, lon);
+        _epiVizDet  = det;
+        _epiVizLat  = lat;
+        _epiVizLon  = lon;
     } else {
-        _clearEpiViz();
         _epiVizDet = null;
         _epiVizLat = null;
         _epiVizLon = null;
@@ -638,10 +641,17 @@ function flyToEpi(lat, lon, ts) {
         if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
     }
 
+    // Defer marker re-coloring until after the animation lands so the new
+    // selection doesn't visibly fly across the screen during the pan.
     if (_pulseIv) { clearInterval(_pulseIv); _pulseIv = null; _pulseTs = null; }
-    applyMarkerSelection(true);
     map.flyTo([lat, lon], FLY_ZOOM, { duration: FLY_DURATION, easeLinearity: 0.5 });
-    map.once('moveend', function () { applyMarkerSelection(); });
+    map.once('moveend', function () {
+        applyMarkerSelection();
+        if (_epiVizDet) {
+            clearTimeout(_epiRedrawTimer);
+            _drawEpiViz(_epiVizDet, _epiVizLat, _epiVizLon);
+        }
+    });
 
     const row = ts ? document.querySelector('.det[data-ts="' + CSS.escape(ts) + '"]') : null;
     const unixTs = row ? row.dataset.unixTs : null;
