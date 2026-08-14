@@ -26,6 +26,12 @@ window.SEISMIC_INITIAL_STATE={{ initial_state_json|safe }};
 <script defer src="//u.fib896.com/script.js" data-website-id="{{ umami_id }}"></script>
 </head>
 <body>
+<div id="boot-overlay">
+  <svg width="200" height="40" viewBox="0 0 200 40">
+    <path id="wave-path" d="M0,20 L20,20 L30,4 L40,36 L50,4 L60,36 L70,20 L90,20 L100,10 L110,30 L120,20 L140,20 L150,6 L160,34 L170,20 L200,20" fill="none" stroke="#f85149" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <p id="boot-msg">connecting to sensor…</p>
+</div>
 <div id="clock-skew-banner" style="display:none;background:#5a1e02;color:#ffa657;font-size:11px;text-align:center;padding:4px 8px;border-bottom:1px solid #d29922;position:sticky;top:0;z-index:9999"></div>
 <header>
   <div id="status-dot"></div>

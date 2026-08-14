@@ -1171,7 +1171,7 @@ function _renderEpiMarkers(filteredDets) {
 
         const mbLabel  = det.mb ? (det.mb_local ? 'local' : det.mb_approx ? 'mb~' + det.mb.toFixed(1) : 'mb=' + det.mb.toFixed(1)) : 'mb pending';
         const mbClass  = mb >= 5 ? 'high' : mb >= 4 ? 'mid' : 'low';
-        const locSrc   = usgsCoords ? 'USGS' : 'sensor';
+        const locSrc   = usgsCoords ? (det.usgs.source === 'emsc' ? 'EMSC' : 'USGS') : 'sensor';
         const locStr   = locSrc + ': ' + Math.abs(la).toFixed(2) + '°' + (la >= 0 ? 'N' : 'S') + ' ' + Math.abs(lo).toFixed(2) + '°' + (lo >= 0 ? 'E' : 'W');
         const hasOrig  = usgsCoords && det.epicenter && det.epicenter[0] != null;
         const origLa   = hasOrig ? det.epicenter[0] : null;
@@ -1181,12 +1181,38 @@ function _renderEpiMarkers(filteredDets) {
             ? '<div class="tip-loc-orig"><a href="#" onclick="event.preventDefault();event.stopPropagation();map.flyTo([' + origLa + ',' + origLo + '],3,{duration:1.0})">sensor: ' + origStr + '</a></div>'
             : '';
 
+        const teleTag  = det.teleseismic ? ' <span class="tip-badge tele">teleseismic</span>' : '';
+        const confVal  = det.conf != null ? det.conf.toFixed(3) : null;
+        const confTag  = confVal ? ' <span class="tip-badge conf-ok" title="PhaseNet consensus confidence">conf ' + confVal + '</span>' : '';
+        const placeRow = usgsCoords && det.usgs.place
+            ? '<div class="tip-place">' + det.usgs.place + '</div>'
+            : '';
+        const catMag   = usgsCoords && det.usgs.mag != null
+            ? det.usgs.mag.toFixed(1) + (det.usgs.magType && det.usgs.magType !== '?' ? det.usgs.magType : '')
+            : null;
+        const depth    = usgsCoords && det.usgs.depth != null ? det.usgs.depth.toFixed(0) + ' km' : null;
+        const catRow   = catMag
+            ? '<div class="tip-cat">catalog: M' + catMag + (depth ? ' · depth ' + depth : '') + '</div>'
+            : '';
+        const eid      = usgsCoords && det.usgs.event_id;
+        const src      = usgsCoords ? (det.usgs.source === 'emsc' ? 'emsc' : 'usgs') : null;
+        const eventUrl = eid && src === 'usgs'
+            ? 'https://earthquake.usgs.gov/earthquakes/eventpage/' + eid
+            : eid && src === 'emsc' ? 'https://www.seismicportal.eu/eventdetail.html?unid=' + eid : null;
+        const linkRow  = eventUrl
+            ? '<div class="tip-link"><a href="' + eventUrl + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">↗ ' + src.toUpperCase() + ' event page</a></div>'
+            : '';
+
         const tipHtml = '<div class="det-tip">'
             + '<div class="tip-time">' + fmtLocal(det.ts) + ' <span style="color:#6e7681">(' + fmtAge(det.unix_ts) + ' ago)</span></div>'
-            + '<div class="tip-mb ' + mbClass + '">' + mbLabel + '</div>'
+            + '<div class="tip-mb ' + mbClass + '">' + mbLabel + teleTag + confTag + '</div>'
+            + placeRow
+            + catRow
             + '<div class="tip-stas">' + det.stations.join(' · ') + '</div>'
             + '<div class="tip-loc">' + locStr + '</div>'
-            + origLink + '</div>';
+            + origLink
+            + linkRow
+            + '</div>';
 
         const m = L.circleMarker([la, lo], Object.assign({ radius: zoomR(r) }, _markerBaseStyle(usgsCoords, false)))
             .bindTooltip(tipHtml, { sticky: false, direction: 'top', className: 'det-tip' })
@@ -1217,15 +1243,37 @@ function _renderEpiMarkers(filteredDets) {
 
 // ── Main update ───────────────────────────────────────────────────────────────
 
+let _failStreak = 0;
+const _BOOT_OVERLAY_THRESHOLD = 2;
+
+function _setBootOverlay(show) {
+    const el = document.getElementById('boot-overlay');
+    if (!el) { return; }
+    if (show) { el.classList.add('visible'); } else { el.classList.remove('visible'); }
+}
+
+function _updateBootMsg(streak) {
+    const msg = document.getElementById('boot-msg');
+    if (!msg) { return; }
+    msg.textContent = streak < 6 ? 'connecting to sensor…' : 'server restarting — waiting for boot…';
+}
+
 function update() {
     fetch('/api/state').then(function (r) {
         if (!r.ok) { throw new Error('HTTP ' + r.status); }
         return r.json();
     }).then(function (d) {
+        _failStreak = 0;
+        _setBootOverlay(false);
         document.getElementById('status-dot').style.background = '';
         try { _updateBody(d); } catch (e) { console.error('[seismic] update error:', e); }
     }).catch(function () {
+        _failStreak++;
         document.getElementById('status-dot').style.background = '#f85149';
+        if (_failStreak >= _BOOT_OVERLAY_THRESHOLD) {
+            _updateBootMsg(_failStreak);
+            _setBootOverlay(true);
+        }
     });
 }
 
@@ -1301,8 +1349,8 @@ function _updateBody(d) {
 
     const scrub = document.getElementById('replay-scrub');
     if (scrub) {
-        scrub.max   = Math.max(0, filteredDets.length - 1);
-        scrub.value = scrub.max;
+        scrub.max = Math.max(0, filteredDets.length - 1);
+        if (!_replayActive) { scrub.value = scrub.max; }
     }
     _updateReplayTicks(filteredDets);
     _renderDetections(dets, filteredDets, d.server_start || 0);
@@ -1524,16 +1572,20 @@ setInterval(update, 3000);
 (function () {
     if (!_deepLinkTs) { return; }
 
-    function resetFilterButtons() {
+    function syncFilterButtons() {
         const confBtn  = document.getElementById('filter-btn');
         const localBtn = document.getElementById('filter-local-btn');
         const mbSel    = document.getElementById('mb-filter-sel');
-        if (confBtn)  { confBtn.style.color = '#6e7681'; confBtn.style.borderColor = '#30363d'; }
-        if (localBtn) { localBtn.style.color = '#6e7681'; localBtn.style.borderColor = '#30363d'; }
-        if (mbSel)    { mbSel.selectedIndex = 0; mbSel.style.color = '#8b949e'; mbSel.style.borderColor = '#30363d'; }
+        if (confBtn)  { confBtn.style.color = filterConfirmed ? '#3fb950' : '#6e7681'; confBtn.style.borderColor = filterConfirmed ? '#3fb950' : '#30363d'; }
+        if (localBtn) { localBtn.style.color = filterLocal ? '#d29922' : '#6e7681'; localBtn.style.borderColor = filterLocal ? '#d29922' : '#30363d'; }
+        if (mbSel) {
+            if (filterMinMb > 0) { mbSel.value = filterMinMb.toFixed(1); } else { mbSel.selectedIndex = 0; }
+            mbSel.style.color = filterMinMb > 0 ? '#58a6ff' : '#8b949e';
+            mbSel.style.borderColor = filterMinMb > 0 ? '#58a6ff' : '#30363d';
+        }
     }
 
-    setTimeout(resetFilterButtons, 100);
+    setTimeout(syncFilterButtons, 100);
 
     let attempts = 0;
 

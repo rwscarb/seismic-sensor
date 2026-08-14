@@ -12,6 +12,12 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 [title]{cursor:help}
 #status-dot{width:8px;height:8px;border-radius:50%;background:#238636;animation:pulse 2s infinite;flex-shrink:0}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+#boot-overlay{position:fixed;inset:0;background:rgba(13,17,23,.88);backdrop-filter:blur(2px);z-index:9999;display:none;flex-direction:column;align-items:center;justify-content:center;gap:18px;pointer-events:none}
+#boot-overlay.visible{display:flex}
+#boot-overlay svg{overflow:visible}
+@keyframes seismic-wave{0%{stroke-dashoffset:0}100%{stroke-dashoffset:-400}}
+#wave-path{stroke-dasharray:400;animation:seismic-wave 1.4s linear infinite}
+#boot-overlay p{color:#6e7681;font-size:12px;letter-spacing:.5px}
 #last-update{color:#6e7681;font-size:11px;margin-left:auto}
 #last-event-summary{font-size:11px;color:#8b949e;border-left:1px solid #30363d;padding-left:12px}
 .grid{display:grid;grid-template-columns:var(--sta-w,220px) 4px 1fr 320px;gap:0;padding:12px;height:calc(100vh - 50px)}
@@ -48,13 +54,19 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 .det-deploy-sep::before,.det-deploy-sep::after{content:'';flex:1;border-top:1px solid #2a1f00}
 .chip{font-size:10px;border-radius:3px;padding:1px 5px;font-weight:bold;white-space:nowrap}
 .fault-tip{background:#1a1209;border:1px solid #e36209;color:#e8c07a;font-size:10px;padding:2px 6px;border-radius:3px;white-space:nowrap}
-.det-tip{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:7px 10px;box-shadow:0 4px 16px rgba(0,0,0,.6);font-size:11px;color:#c9d1d9;white-space:nowrap;pointer-events:none}
+.det-tip{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:7px 10px;box-shadow:0 4px 16px rgba(0,0,0,.6);font-size:11px;color:#c9d1d9;white-space:nowrap;pointer-events:none;min-width:180px;max-width:280px}
 .det-tip .tip-time{color:#8b949e;font-size:10px;letter-spacing:.3px;font-variant-numeric:tabular-nums}
-.det-tip .tip-mb{font-size:14px;font-weight:600;letter-spacing:.05em}
+.det-tip .tip-mb{font-size:14px;font-weight:600;letter-spacing:.05em;display:flex;align-items:baseline;gap:6px}
 .det-tip .tip-mb.high{color:#f85149}.det-tip .tip-mb.mid{color:#d29922}.det-tip .tip-mb.low{color:#58a6ff}
+.det-tip .tip-place{color:#c9d1d9;font-size:10px;margin-top:3px;white-space:normal;line-height:1.35}
+.det-tip .tip-cat{color:#8b949e;font-size:10px;margin-top:2px}
 .det-tip .tip-stas{color:#8b949e;font-size:10px;margin-top:3px}
 .det-tip .tip-loc{color:#6e7681;font-size:10px;margin-top:2px}
 .det-tip .tip-loc-orig{font-size:10px;margin-top:1px}.det-tip .tip-loc-orig a{color:#4a9eff;text-decoration:none;pointer-events:all}.det-tip .tip-loc-orig a:hover{text-decoration:underline}
+.det-tip .tip-badge{font-size:9px;font-weight:normal;padding:1px 5px;border-radius:3px;vertical-align:middle}
+.det-tip .tip-badge.tele{background:#21262d;color:#8b949e;border:1px solid #30363d}
+.det-tip .tip-badge.conf-ok{background:#0d2a15;color:#3fb950;border:1px solid #238636}
+.det-tip .tip-link{font-size:9px;margin-top:4px;border-top:1px solid #21262d;padding-top:4px}.det-tip .tip-link a{color:#4a9eff;text-decoration:none;pointer-events:all}.det-tip .tip-link a:hover{text-decoration:underline}
 .leaflet-tooltip.det-tip::before{display:none}.leaflet-tooltip.det-tip{pointer-events:all}
 .sta-tip{background:#0d1117;border:1px solid #21262d;border-radius:5px;padding:5px 9px;box-shadow:0 3px 12px rgba(0,0,0,.5);font-size:10px;color:#c9d1d9;white-space:nowrap;pointer-events:none}
 .sta-tip .tip-key{color:#58a6ff;font-weight:600;font-size:11px}
