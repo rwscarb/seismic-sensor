@@ -105,6 +105,75 @@ def _slack_sig_event(event, expected_arrival, matched_det):
         print(f'  [sig-watch] slack failed: {e}', flush=True)
 
 
+def compute_recall_window(days: float = 7.0, minmag: float = 4.5) -> dict:
+    """Query USGS for all events in the past `days` days with mag >= minmag
+    and check each against the detection log.
+
+    Returns a confusion-matrix dict:
+      true_positives  : USGS events we detected
+      false_negatives : USGS events we missed
+      events          : list of per-event dicts with outcome
+    """
+    import urllib.request
+    end_ts = time.time()
+    start_ts = end_ts - days * 86400
+    url = (
+        f'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson'
+        f'&minmagnitude={minmag}'
+        f'&orderby=time-asc'
+        f'&starttime={time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(start_ts))}'
+        f'&endtime={time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(end_ts))}'
+        f'&limit=200'
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=20) as resp:
+            data = json.loads(resp.read())
+    except Exception as e:
+        return {'error': str(e)}
+
+    true_positives, false_negatives = 0, 0
+    events = []
+    for feat in data.get('features', []):
+        p = feat['properties']
+        c = feat['geometry']['coordinates']
+        mag = p.get('mag')
+        if mag is None or mag < minmag:
+            continue
+        event_unix = p['time'] / 1000
+        exp_arr = _expected_p_arrival(c[1], c[0], event_unix)
+        matched = _find_matching_detection(exp_arr)
+        detected = matched is not None
+        row = {
+            'usgs_id':    feat.get('id', ''),
+            'mag':        mag,
+            'place':      p.get('place', '?'),
+            'time':       time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(event_unix)),
+            'lat':        round(c[1], 3),
+            'lon':        round(c[0], 3),
+            'depth_km':   round(c[2], 1) if len(c) > 2 else None,
+            'detected':   detected,
+        }
+        if detected:
+            row['det_conf'] = round(matched.conf, 3)
+            row['det_lag_s'] = round(abs(matched.unix_ts - exp_arr), 1)
+            true_positives += 1
+        else:
+            false_negatives += 1
+        events.append(row)
+
+    total = true_positives + false_negatives
+    recall = round(true_positives / total, 4) if total else None
+    return {
+        'days':             days,
+        'minmag':           minmag,
+        'usgs_events':      total,
+        'true_positives':   true_positives,
+        'false_negatives':  false_negatives,
+        'recall':           recall,
+        'events':           sorted(events, key=lambda x: x['time'], reverse=True),
+    }
+
+
 def poll_usgs_significant():
     """Background thread: poll USGS significant-event feed and cross-check detections."""
     import urllib.request

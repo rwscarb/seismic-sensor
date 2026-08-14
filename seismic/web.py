@@ -160,6 +160,26 @@ def start_web_server():
             'detections': [_fmt(d) for d in sorted(checked, key=lambda x: x.unix_ts, reverse=True)],
         })
 
+    @app.route('/api/recall')
+    def recall():
+        """Confusion-matrix recall endpoint.
+
+        Query params:
+          days   (float, default 7)   — look-back window
+          minmag (float, default 4.5) — minimum USGS magnitude to include
+
+        Fetches all USGS events in the window and checks each against the
+        detection log, returning TP/FN counts and per-event breakdown.
+        Slow (~3s) due to live USGS query — do not call in tight loops.
+        """
+        from seismic.watcher import compute_recall_window
+        days   = request.args.get('days',   default=7.0,  type=float)
+        minmag = request.args.get('minmag', default=4.5,  type=float)
+        result = compute_recall_window(days=days, minmag=minmag)
+        if 'error' in result:
+            return jsonify(result), 502
+        return jsonify(result)
+
     @app.route('/api/localize', methods=['POST'])
     def localize():
         """Compute epicenter from station arrival times.
