@@ -532,10 +532,8 @@ function _scheduleEpiRedraw() {
     }, 80);
 }
 
-map.on('zoomend moveend', function () {
-    applyMarkerSelection();
-    _scheduleEpiRedraw();
-});
+map.on('zoomend', function () { applyMarkerSelection(); });
+map.on('moveend',  function () { _scheduleEpiRedraw(); });
 
 
 // ── Station card hover ────────────────────────────────────────────────────────
