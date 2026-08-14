@@ -195,7 +195,8 @@ const _faultsBtn = document.getElementById('faults-btn');
 function _setFaultBtnState() {
     _faultsBtn.style.color = _faultOn ? '#d29922' : '#6e7681';
     _faultsBtn.style.borderColor = _faultOn ? '#d29922' : '#30363d';
-    _faultsBtn.textContent = _faultLoading ? '⟳ loading…' : (_faultOn ? '⚡ faults ✓' : '⚡ faults');
+    _faultsBtn.textContent = '⚡ faults';
+    _faultsBtn.style.opacity = _faultLoading ? '0.5' : '1';
 }
 
 _faultsBtn.addEventListener('click', async function () {
@@ -1439,7 +1440,7 @@ function _mobTab(which, btn) {
     const winBtns   = document.querySelectorAll('.score-win-btn');
     if (!scoreEl) { return; }
 
-    let activeDays = 7;
+    let activeDays = 1;
 
     function pct(n, d) { return d > 0 ? Math.round(n / d * 100) : '—'; }
     function col(v)     { return v >= 80 ? '#3fb950' : v >= 60 ? '#d29922' : '#f85149'; }
@@ -1458,7 +1459,7 @@ function _mobTab(which, btn) {
     }
 
     function loadScoreboard() {
-        scoreEl.innerHTML = '<span style="color:#484f58">loading…</span>';
+        scoreEl.style.opacity = '0.45';
         const qs = '?days=' + activeDays;
         Promise.all([
             fetch('/api/scoreboard' + qs).then(function (r) { return r.json(); }),
@@ -1473,8 +1474,10 @@ function _mobTab(which, btn) {
                 metricRow('precision', precV, precC, (sb.confirmed || 0) + '/' + (sb.checked || 0) + ' detections confirmed')
                 + metricRow('recall', recV, recC, (rc.true_positives || 0) + '/' + (rc.usgs_events || 0) + ' USGS events caught')
                 + '<a href="/api/scoreboard" target="_blank" style="color:#484f58;font-size:9px;text-decoration:none">raw ↗</a>';
+            scoreEl.style.opacity = '1';
         }).catch(function () {
             scoreEl.innerHTML = '<span style="color:#484f58;font-size:10px">unavailable</span>';
+            scoreEl.style.opacity = '1';
         });
     }
 

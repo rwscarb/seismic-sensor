@@ -6,6 +6,7 @@ body{background:#0d1117;color:#c9d1d9;font-family:'Courier New',monospace;font-s
 ::-webkit-scrollbar-thumb{background:#30363d;border-radius:2px}
 ::-webkit-scrollbar-thumb:hover{background:#484f58}
 header{background:#161b22;border-bottom:1px solid #30363d;padding:10px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+#header-controls button{white-space:nowrap}
 header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 #cfg{color:#6e7681;font-size:11px}
 [title]{cursor:help}
