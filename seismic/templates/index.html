@@ -100,7 +100,11 @@ window.SEISMIC_CONFIG={
         <button id="filter-local-btn" title="Show only localized (non-teleseismic) detections" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">&#128205; local</button>
         <button id="filter-btn" title="Show confirmed catalog matches only" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">&#10003; conf</button>
         <button id="replay-btn" title="Replay detections on map in chronological order" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">&#9654; replay</button>
+        <button id="score-btn" title="Toggle precision/recall scoreboard" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">&#128202; score</button>
       </div>
+    </div>
+    <div id="scoreboard-bar" style="display:none;padding:6px 10px;border-bottom:1px solid #21262d;font-size:11px">
+      <div id="scoreboard-content" style="color:#8b949e">loading…</div>
     </div>
     <div id="replay-bar" style="padding:0 8px 4px;display:flex;flex-direction:column;gap:2px;border-bottom:1px solid #21262d">
       <input type="range" id="replay-scrub" min="0" max="0" value="0" style="flex:1;width:100%;accent-color:#586069;cursor:pointer;margin:0" title="Scrub through detections">
