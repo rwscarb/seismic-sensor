@@ -170,7 +170,10 @@ def locate_epicenter(arrivals, sp_distances=None):
         dists = np.array([haversine_km(lat0, lon0, sta_lat[i], sta_lon[i])
                           for i in range(len(obs))])
         travel = np.array([p_travel_time_s(d) for d in dists])
-        t0_opt = float(np.mean(arr_time - travel))
+        # Use median (not mean) so a single bad pick doesn't pull t0 into a
+        # false minimum — the mean estimator absorbs TDOA errors into t0,
+        # artificially flattening the cost landscape at wrong candidate locations.
+        t0_opt = float(np.median(arr_time - travel))
         pred = t0_opt + travel
         tdoa_res = float(np.sum((pred - arr_time) ** 2))
 
@@ -187,18 +190,26 @@ def locate_epicenter(arrivals, sp_distances=None):
         return tdoa_res + sp_res
 
     # ── Stage 1: coarse global grid search at 5° resolution ──────────────────
-    best_cost = float('inf')
-    best_start = (float(np.mean(sta_lat)), float(np.mean(sta_lon)))
+    # Collect the top-8 candidates to guard against false minima in the flat
+    # teleseismic regime where a single-start refinement often lands in the wrong basin.
+    grid_candidates = []
     for glat in range(-85, 91, 5):
         for glon in range(-180, 181, 5):
             c = cost((glat, glon))
-            if c < best_cost:
-                best_cost = c
-                best_start = (glat, glon)
+            grid_candidates.append((c, glat, glon))
+    grid_candidates.sort(key=lambda x: x[0])
+    top_starts = [(g[1], g[2]) for g in grid_candidates[:8]]
 
-    # ── Stage 2: Nelder-Mead refinement from best grid point ─────────────────
-    res = minimize(cost, best_start, method='Nelder-Mead',
-                   options={'xatol': 0.02, 'fatol': 0.05, 'maxiter': 100000})
+    # ── Stage 2: Nelder-Mead refinement from each top candidate; keep global best ──
+    best_res = None
+    best_final_cost = float('inf')
+    nm_opts = {'xatol': 0.02, 'fatol': 0.05, 'maxiter': 100000}
+    for start in top_starts:
+        r = minimize(cost, start, method='Nelder-Mead', options=nm_opts)
+        if r.fun < best_final_cost:
+            best_final_cost = r.fun
+            best_res = r
+    res = best_res
 
     lat_e, lon_e = res.x
     dists_final = np.array([
