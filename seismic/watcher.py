@@ -117,13 +117,14 @@ def compute_recall_window(days: float = 7.0, minmag: float = 4.5) -> dict:
     import urllib.request
     end_ts = time.time()
     start_ts = end_ts - days * 86400
+    limit = max(200, int(days * 25))
     url = (
         f'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson'
         f'&minmagnitude={minmag}'
-        f'&orderby=time-asc'
+        f'&orderby=time'
         f'&starttime={time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(start_ts))}'
         f'&endtime={time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(end_ts))}'
-        f'&limit=200'
+        f'&limit={limit}'
     )
     try:
         with urllib.request.urlopen(url, timeout=20) as resp:
