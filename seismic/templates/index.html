@@ -63,8 +63,16 @@ window.SEISMIC_CONFIG={
   <div class="panel" id="left-panel">
     <div class="panel-hdr" style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid #21262d"><h2 style="margin:0">Stations</h2><button id="sta-sort-btn" title="Toggle station sort order" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">A→Z</button></div>
     <div id="stations"></div>
-    <div id="scoreboard-panel" style="border-top:1px solid #21262d;padding:8px 10px;font-size:11px">
-      <div style="color:#6e7681;text-transform:uppercase;letter-spacing:.8px;font-size:9px;margin-bottom:6px">Score</div>
+    <div id="scoreboard-panel" style="border-top:1px solid #21262d;padding:10px 0 2px;font-size:11px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="color:#6e7681;text-transform:uppercase;letter-spacing:.8px;font-size:9px">Score</span>
+        <div id="score-window-btns" style="display:flex;gap:2px">
+          <button class="score-win-btn" data-days="1"  style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:3px;padding:1px 5px;font-size:9px;cursor:pointer">1d</button>
+          <button class="score-win-btn" data-days="3"  style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:3px;padding:1px 5px;font-size:9px;cursor:pointer">3d</button>
+          <button class="score-win-btn active-win" data-days="7"  style="background:#0d1117;border:1px solid #58a6ff;color:#58a6ff;border-radius:3px;padding:1px 5px;font-size:9px;cursor:pointer">7d</button>
+          <button class="score-win-btn" data-days="30" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:3px;padding:1px 5px;font-size:9px;cursor:pointer">30d</button>
+        </div>
+      </div>
       <div id="scoreboard-content" style="color:#8b949e">loading…</div>
     </div>
   </div>

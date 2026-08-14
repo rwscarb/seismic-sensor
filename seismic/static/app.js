@@ -1435,43 +1435,60 @@ function _mobTab(which, btn) {
 // ── Scoreboard ───────────────────────────────────────────────────────────────
 
 (function () {
-    const scoreEl = document.getElementById('scoreboard-content');
+    const scoreEl   = document.getElementById('scoreboard-content');
+    const winBtns   = document.querySelectorAll('.score-win-btn');
     if (!scoreEl) { return; }
+
+    let activeDays = 7;
 
     function pct(n, d) { return d > 0 ? Math.round(n / d * 100) : '—'; }
     function col(v)     { return v >= 80 ? '#3fb950' : v >= 60 ? '#d29922' : '#f85149'; }
     function bar(v)     {
         const c = col(v);
-        return '<div style="height:3px;background:#21262d;border-radius:2px;margin:2px 0 5px">'
+        return '<div style="height:3px;background:#21262d;border-radius:2px;margin:3px 0 4px">'
             + '<div style="width:' + Math.min(100, v) + '%;height:100%;background:' + c + ';border-radius:2px"></div></div>';
+    }
+    function metricRow(label, v, vc, frac) {
+        return '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:2px">'
+            + '<span style="color:#8b949e">' + label + '</span>'
+            + '<span style="color:' + vc + ';font-weight:600">' + (typeof v === 'number' ? v + '%' : v) + '</span>'
+            + '</div>'
+            + (typeof v === 'number' ? bar(v) : '')
+            + '<div style="color:#6e7681;font-size:10px;margin-bottom:6px">' + frac + '</div>';
     }
 
     function loadScoreboard() {
+        scoreEl.innerHTML = '<span style="color:#484f58">loading…</span>';
+        const qs = '?days=' + activeDays;
         Promise.all([
-            fetch('/api/scoreboard').then(function (r) { return r.json(); }),
-            fetch('/api/recall').then(function (r) { return r.json(); })
+            fetch('/api/scoreboard' + qs).then(function (r) { return r.json(); }),
+            fetch('/api/recall' + qs).then(function (r) { return r.json(); })
         ]).then(function (results) {
             const sb = results[0], rc = results[1];
             const precV = pct(sb.confirmed || 0, sb.checked || 0);
             const recV  = pct(rc.true_positives || 0, rc.usgs_events || 0);
             const precC = typeof precV === 'number' ? col(precV) : '#6e7681';
             const recC  = typeof recV  === 'number' ? col(recV)  : '#6e7681';
-            function row(label, v, vc, frac) {
-                return '<div style="display:flex;justify-content:space-between;align-items:baseline">'
-                    + '<span style="color:#8b949e">' + label + '</span>'
-                    + '<span style="color:' + vc + ';font-weight:600">' + (typeof v === 'number' ? v + '%' : v) + '</span>'
-                    + '</div>'
-                    + (typeof v === 'number' ? bar(v) : '')
-                    + '<div style="color:#6e7681;font-size:10px;margin-top:-3px;margin-bottom:6px">' + frac + '</div>';
-            }
             scoreEl.innerHTML =
-                row('precision', precV, precC, (sb.confirmed || 0) + '/' + (sb.checked || 0) + ' detections confirmed')
-                + row('recall', recV, recC, (rc.true_positives || 0) + '/' + (rc.usgs_events || 0) + ' USGS events caught (' + (rc.days || 7) + 'd ≥mb' + (rc.minmag || 4.5) + ')')
+                metricRow('precision', precV, precC, (sb.confirmed || 0) + '/' + (sb.checked || 0) + ' detections confirmed')
+                + metricRow('recall', recV, recC, (rc.true_positives || 0) + '/' + (rc.usgs_events || 0) + ' USGS events caught')
                 + '<a href="/api/scoreboard" target="_blank" style="color:#484f58;font-size:9px;text-decoration:none">raw ↗</a>';
         }).catch(function () {
             scoreEl.innerHTML = '<span style="color:#484f58;font-size:10px">unavailable</span>';
         });
     }
+
+    winBtns.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            activeDays = parseInt(btn.dataset.days, 10);
+            winBtns.forEach(function (b) {
+                const active = b === btn;
+                b.style.color       = active ? '#58a6ff' : '#6e7681';
+                b.style.borderColor = active ? '#58a6ff' : '#30363d';
+            });
+            loadScoreboard();
+        });
+    });
 
     loadScoreboard();
     setInterval(loadScoreboard, 60000);

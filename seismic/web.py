@@ -121,14 +121,24 @@ def start_web_server():
     def scoreboard():
         """Model accuracy scoreboard based on USGS cross-correlation results.
 
+        Query params:
+          days (float, default 0 = all-time) — look-back window in days; 0 means all
+
         A detection is scoreable only when usgs_checked=True.
         - confirmed : usgs is not None  (true positive — USGS found a matching event)
         - false_pos : usgs is None      (no matching catalog event found)
 
         Returns counts, precision, and per-detection breakdown.
         """
+        import time as _time
+        days = request.args.get('days', default=0.0, type=float)
+
         with sensor_state._lock:
             dets = list(sensor_state.detections)
+
+        if days > 0:
+            cutoff = _time.time() - days * 86400
+            dets = [d for d in dets if (d.unix_ts or 0) >= cutoff]
 
         checked  = [d for d in dets if d.usgs_checked]
         confirmed = [d for d in checked if d.usgs is not None]
