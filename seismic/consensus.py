@@ -7,7 +7,7 @@ import numpy as np
 from seismic.config import (
     CHANNELS, N_CONSENSUS, CONSENSUS_WINDOW, THRESHOLD, ALERT_COOLDOWN,
     P_LEAD_S, MB_DELAY_S, MAG_MAX_CREDIBLE, LOC_MIN_STA, fmt_mag,
-    PER_STATION_COOLDOWN, NOISE_PERSIST_S, MIN_LOGIT_GAP,
+    PER_STATION_COOLDOWN, NOISE_PERSIST_S, MIN_LOGIT_GAP, WIN_SAMPLES,
 )
 from seismic.localize import locate_epicenter, station_coords
 from seismic.model import refine_picks_phasenet
@@ -138,9 +138,7 @@ def _localize(arrivals, sp_dists):
 
 # ── Detection dispatch ─────────────────────────────────────────────────────────
 
-def _fire_detection(now, ts, conf, logit_gap, stations_fired):
-    """Build and persist a confirmed detection, then launch deferred threads."""
-    mean_gap = _mean_logit_gap(stations_fired)
+def _fire_detection(now, ts, conf, logit_gap, stations_fired, mean_gap=0.0):
 
     if _cs.suppressed_count > 0:
         print(f"  [{ts}] {_cs.suppressed_count} event(s) suppressed "
@@ -270,10 +268,20 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now):
     if not cooldown_ok or not gap_ok or all_cooled:
         return
 
+    # ── Second-stage classifier veto ─────────────────────────────────────────
+    from seismic import classifier as _clf  # noqa: PLC0415
+    clf_prob, clf_suppress = _clf.score(stations_fired, station_rings, CHANNELS, WIN_SAMPLES)
+    if clf_suppress:
+        print(f"  [{ts}] VETOED by classifier (prob={clf_prob:.3f})", flush=True)
+        return
+    if clf_prob is not None:
+        print(f"  [{ts}] classifier OK (prob={clf_prob:.3f})", flush=True)
+
     # ── Fire ──────────────────────────────────────────────────────────────────
     _cs.last_alert = now
     for k in stations_fired:
         _cs.sta_last_alert[k] = now
 
+    mean_gap = _mean_logit_gap(stations_fired)
     _cs.recent.clear()
-    _fire_detection(now, ts, conf, logit_gap, stations_fired)
+    _fire_detection(now, ts, conf, logit_gap, stations_fired, mean_gap)

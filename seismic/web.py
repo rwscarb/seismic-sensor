@@ -117,6 +117,49 @@ def start_web_server():
             entries = [e for e in entries if e.get('seq', 0) > since]
         return jsonify({'entries': entries[-100:], 'total': len(_LOG_BUF)})
 
+    @app.route('/api/scoreboard')
+    def scoreboard():
+        """Model accuracy scoreboard based on USGS cross-correlation results.
+
+        A detection is scoreable only when usgs_checked=True.
+        - confirmed : usgs is not None  (true positive — USGS found a matching event)
+        - false_pos : usgs is None      (no matching catalog event found)
+
+        Returns counts, precision, and per-detection breakdown.
+        """
+        with sensor_state._lock:
+            dets = list(sensor_state.detections)
+
+        checked  = [d for d in dets if d.usgs_checked]
+        confirmed = [d for d in checked if d.usgs is not None]
+        false_pos = [d for d in checked if d.usgs is None]
+        pending   = [d for d in dets if not d.usgs_checked]
+
+        precision = round(len(confirmed) / len(checked), 4) if checked else None
+
+        def _fmt(d):
+            row = {
+                'ts': d.ts,
+                'conf': round(d.conf, 3),
+                'mb': d.mb,
+                'confirmed': d.usgs is not None,
+            }
+            if d.usgs:
+                row['usgs_mag']   = d.usgs.get('magnitude')
+                row['usgs_place'] = d.usgs.get('place')
+                row['usgs_id']    = d.usgs.get('id')
+            return row
+
+        return jsonify({
+            'total_detections': len(dets),
+            'checked': len(checked),
+            'confirmed': len(confirmed),
+            'false_positives': len(false_pos),
+            'pending': len(pending),
+            'precision': precision,
+            'detections': [_fmt(d) for d in sorted(checked, key=lambda x: x.unix_ts, reverse=True)],
+        })
+
     @app.route('/api/localize', methods=['POST'])
     def localize():
         """Compute epicenter from station arrival times.
