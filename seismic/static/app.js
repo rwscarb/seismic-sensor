@@ -1171,6 +1171,7 @@ function _renderEpiMarkers(filteredDets) {
 
         const mbLabel  = det.mb ? (det.mb_local ? 'local' : det.mb_approx ? 'mb~' + det.mb.toFixed(1) : 'mb=' + det.mb.toFixed(1)) : 'mb pending';
         const mbClass  = mb >= 5 ? 'high' : mb >= 4 ? 'mid' : 'low';
+        const mbPx     = Math.max(13, Math.min(44, Math.round(13 + (mb - 2) * 5)));
         const locSrc   = usgsCoords ? (det.usgs.source === 'emsc' ? 'EMSC' : 'USGS') : 'sensor';
         const locStr   = locSrc + ': ' + Math.abs(la).toFixed(2) + '°' + (la >= 0 ? 'N' : 'S') + ' ' + Math.abs(lo).toFixed(2) + '°' + (lo >= 0 ? 'E' : 'W');
         const hasOrig  = usgsCoords && det.epicenter && det.epicenter[0] != null;
@@ -1181,37 +1182,50 @@ function _renderEpiMarkers(filteredDets) {
             ? '<div class="tip-loc-orig"><a href="#" onclick="event.preventDefault();event.stopPropagation();map.flyTo([' + origLa + ',' + origLo + '],3,{duration:1.0})">sensor: ' + origStr + '</a></div>'
             : '';
 
-        const teleTag  = det.teleseismic ? ' <span class="tip-badge tele">teleseismic</span>' : '';
-        const confVal  = det.conf != null ? det.conf.toFixed(3) : null;
-        const confTag  = confVal ? ' <span class="tip-badge conf-ok" title="PhaseNet consensus confidence">conf ' + confVal + '</span>' : '';
-        const placeRow = usgsCoords && det.usgs.place
+        const teleBadge = det.teleseismic ? '<span class="tip-badge tele">teleseismic</span>' : '';
+        const confVal   = det.conf != null ? det.conf.toFixed(3) : null;
+        const confBadge = confVal ? '<span class="tip-badge conf-ok" title="PhaseNet consensus confidence">conf ' + confVal + '</span>' : '';
+        const badges    = (teleBadge || confBadge) ? '<div class="tip-badges">' + teleBadge + confBadge + '</div>' : '';
+        const placeRow  = usgsCoords && det.usgs.place
             ? '<div class="tip-place">' + det.usgs.place + '</div>'
             : '';
-        const catMag   = usgsCoords && det.usgs.mag != null
-            ? det.usgs.mag.toFixed(1) + (det.usgs.magType && det.usgs.magType !== '?' ? det.usgs.magType : '')
+
+        const catMag  = usgsCoords && det.usgs.mag != null
+            ? 'M' + det.usgs.mag.toFixed(1) + (det.usgs.magType && det.usgs.magType !== '?' ? det.usgs.magType : '')
             : null;
-        const depth    = usgsCoords && det.usgs.depth != null ? det.usgs.depth.toFixed(0) + ' km' : null;
-        const catRow   = catMag
-            ? '<div class="tip-cat">catalog: M' + catMag + (depth ? ' · depth ' + depth : '') + '</div>'
+        const depthM  = usgsCoords && det.usgs.depth != null ? Math.abs(det.usgs.depth) : null;
+        const depthStr = depthM != null ? depthM.toFixed(0) + ' km depth' : null;
+        const catRow  = catMag
+            ? '<div class="tip-row"><span class="tip-row-label">catalog</span><span class="tip-cat-val">' + catMag + (depthStr ? ' <span class="tip-depth">· ' + depthStr + '</span>' : '') + '</span></div>'
             : '';
+        const stasRow = '<div class="tip-row"><span class="tip-row-label">stations</span><span class="tip-stas-val">' + det.stations.join(' · ') + '</span></div>';
+        const locRow  = '<div class="tip-row"><span class="tip-row-label">' + locSrc.toLowerCase() + '</span><span class="tip-loc-val">' + Math.abs(la).toFixed(2) + '°' + (la >= 0 ? 'N' : 'S') + ' ' + Math.abs(lo).toFixed(2) + '°' + (lo >= 0 ? 'E' : 'W') + '</span></div>';
+        const origRow = hasOrig
+            ? '<div class="tip-row tip-loc-orig"><span class="tip-row-label">sensor</span><a href="#" onclick="event.preventDefault();event.stopPropagation();map.flyTo([' + origLa + ',' + origLo + '],3,{duration:1.0})">' + Math.abs(origLa).toFixed(2) + '°' + (origLa >= 0 ? 'N' : 'S') + ' ' + Math.abs(origLo).toFixed(2) + '°' + (origLo >= 0 ? 'E' : 'W') + '</a></div>'
+            : '';
+
         const eid      = usgsCoords && det.usgs.event_id;
         const src      = usgsCoords ? (det.usgs.source === 'emsc' ? 'emsc' : 'usgs') : null;
         const eventUrl = eid && src === 'usgs'
             ? 'https://earthquake.usgs.gov/earthquakes/eventpage/' + eid
             : eid && src === 'emsc' ? 'https://www.seismicportal.eu/eventdetail.html?unid=' + eid : null;
-        const linkRow  = eventUrl
-            ? '<div class="tip-link"><a href="' + eventUrl + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">↗ ' + src.toUpperCase() + ' event page</a></div>'
+        const footHtml = eventUrl
+            ? '<div class="tip-foot"><div class="tip-link"><a href="' + eventUrl + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">↗ ' + src.toUpperCase() + ' event page</a></div></div>'
             : '';
 
         const tipHtml = '<div class="det-tip">'
-            + '<div class="tip-time">' + fmtLocal(det.ts) + ' <span style="color:#6e7681">(' + fmtAge(det.unix_ts) + ' ago)</span></div>'
-            + '<div class="tip-mb ' + mbClass + '">' + mbLabel + teleTag + confTag + '</div>'
-            + placeRow
-            + catRow
-            + '<div class="tip-stas">' + det.stations.join(' · ') + '</div>'
-            + '<div class="tip-loc">' + locStr + '</div>'
-            + origLink
-            + linkRow
+            + '<div class="tip-head">'
+            +   '<div class="tip-time">' + fmtLocal(det.ts) + ' · ' + fmtAge(det.unix_ts) + ' ago</div>'
+            +   '<div class="tip-mag-row"><span class="tip-mb ' + mbClass + '" style="font-size:' + mbPx + 'px">' + mbLabel + '</span>' + badges + '</div>'
+            +   placeRow
+            + '</div>'
+            + '<div class="tip-body">'
+            +   catRow
+            +   stasRow
+            +   locRow
+            +   origRow
+            + '</div>'
+            + footHtml
             + '</div>';
 
         const m = L.circleMarker([la, lo], Object.assign({ radius: zoomR(r) }, _markerBaseStyle(usgsCoords, false)))

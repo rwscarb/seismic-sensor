@@ -54,19 +54,27 @@ header h1{font-size:15px;color:#58a6ff;letter-spacing:1px}
 .det-deploy-sep::before,.det-deploy-sep::after{content:'';flex:1;border-top:1px solid #2a1f00}
 .chip{font-size:10px;border-radius:3px;padding:1px 5px;font-weight:bold;white-space:nowrap}
 .fault-tip{background:#1a1209;border:1px solid #e36209;color:#e8c07a;font-size:10px;padding:2px 6px;border-radius:3px;white-space:nowrap}
-.det-tip{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:7px 10px;box-shadow:0 4px 16px rgba(0,0,0,.6);font-size:11px;color:#c9d1d9;white-space:nowrap;pointer-events:none;min-width:180px;max-width:280px}
-.det-tip .tip-time{color:#8b949e;font-size:10px;letter-spacing:.3px;font-variant-numeric:tabular-nums}
-.det-tip .tip-mb{font-size:14px;font-weight:600;letter-spacing:.05em;display:flex;align-items:baseline;gap:6px}
+.det-tip{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:0;box-shadow:0 6px 24px rgba(0,0,0,.7);font-size:12px;color:#c9d1d9;white-space:nowrap;pointer-events:none;min-width:220px;max-width:310px;overflow:hidden}
+.det-tip .tip-head{padding:8px 12px 7px;border-bottom:1px solid #21262d}
+.det-tip .tip-time{color:#8b949e;font-size:10px;letter-spacing:.3px;font-variant-numeric:tabular-nums;margin-bottom:4px}
+.det-tip .tip-mag-row{display:flex;align-items:center;gap:8px}
+.det-tip .tip-mb{font-size:18px;font-weight:700;letter-spacing:.02em;line-height:1}
 .det-tip .tip-mb.high{color:#f85149}.det-tip .tip-mb.mid{color:#d29922}.det-tip .tip-mb.low{color:#58a6ff}
-.det-tip .tip-place{color:#c9d1d9;font-size:10px;margin-top:3px;white-space:normal;line-height:1.35}
-.det-tip .tip-cat{color:#8b949e;font-size:10px;margin-top:2px}
-.det-tip .tip-stas{color:#8b949e;font-size:10px;margin-top:3px}
-.det-tip .tip-loc{color:#6e7681;font-size:10px;margin-top:2px}
-.det-tip .tip-loc-orig{font-size:10px;margin-top:1px}.det-tip .tip-loc-orig a{color:#4a9eff;text-decoration:none;pointer-events:all}.det-tip .tip-loc-orig a:hover{text-decoration:underline}
-.det-tip .tip-badge{font-size:9px;font-weight:normal;padding:1px 5px;border-radius:3px;vertical-align:middle}
+.det-tip .tip-badges{display:flex;gap:4px;flex-wrap:wrap}
+.det-tip .tip-badge{font-size:9px;font-weight:600;padding:2px 6px;border-radius:3px;letter-spacing:.3px;text-transform:uppercase}
 .det-tip .tip-badge.tele{background:#21262d;color:#8b949e;border:1px solid #30363d}
 .det-tip .tip-badge.conf-ok{background:#0d2a15;color:#3fb950;border:1px solid #238636}
-.det-tip .tip-link{font-size:9px;margin-top:4px;border-top:1px solid #21262d;padding-top:4px}.det-tip .tip-link a{color:#4a9eff;text-decoration:none;pointer-events:all}.det-tip .tip-link a:hover{text-decoration:underline}
+.det-tip .tip-place{font-size:12px;font-weight:600;color:#e6edf3;margin-top:5px;white-space:normal;line-height:1.3}
+.det-tip .tip-body{padding:7px 12px}
+.det-tip .tip-row{display:flex;align-items:baseline;gap:6px;margin-bottom:3px;font-size:11px}
+.det-tip .tip-row-label{color:#8b949e;font-size:10px;min-width:46px;flex-shrink:0}
+.det-tip .tip-cat-val{color:#c9d1d9}
+.det-tip .tip-depth{color:#8b949e;font-size:10px}
+.det-tip .tip-stas-val{color:#c9d1d9;white-space:normal;line-height:1.4}
+.det-tip .tip-loc-val{color:#adbac7;font-variant-numeric:tabular-nums}
+.det-tip .tip-loc-orig a{color:#4a9eff;text-decoration:none;pointer-events:all}.det-tip .tip-loc-orig a:hover{text-decoration:underline}
+.det-tip .tip-foot{padding:6px 12px;border-top:1px solid #21262d;background:#0d1117}
+.det-tip .tip-link a{color:#4a9eff;font-size:10px;text-decoration:none;pointer-events:all}.det-tip .tip-link a:hover{text-decoration:underline}
 .leaflet-tooltip.det-tip::before{display:none}.leaflet-tooltip.det-tip{pointer-events:all}
 .sta-tip{background:#0d1117;border:1px solid #21262d;border-radius:5px;padding:5px 9px;box-shadow:0 3px 12px rgba(0,0,0,.5);font-size:10px;color:#c9d1d9;white-space:nowrap;pointer-events:none}
 .sta-tip .tip-key{color:#58a6ff;font-weight:600;font-size:11px}

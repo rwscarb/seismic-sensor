@@ -13,8 +13,35 @@ jobs:
     needs: [test, lint]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed files
+        id: changes
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD)
+          echo "Changed files:"
+          echo "$CHANGED"
+          if echo "$CHANGED" | grep -qvE '^seismic/(static|templates)/'; then
+            echo "static_only=false" >> $GITHUB_OUTPUT
+          else
+            echo "static_only=true" >> $GITHUB_OUTPUT
+          fi
+
       - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy --remote-only
+
+      - name: Full deploy (Python or config changed)
+        if: steps.changes.outputs.static_only == 'false'
+        run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Static-only deploy (no restart)
+        if: steps.changes.outputs.static_only == 'true'
+        run: |
+          tar czf - seismic/static/app.js seismic/static/app.css seismic/templates/index.html \
+            | flyctl ssh console -C "tar xzf - -C /app"
+          echo "Static files deployed — services not restarted."
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
