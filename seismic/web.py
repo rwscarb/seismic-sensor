@@ -89,6 +89,15 @@ def start_web_server():
 
     @app.route('/health')
     def health():
+        # Fail if all known stations have gone silent for >5 minutes
+        STALE_S = 300.0
+        now = time.time()
+        snaps = sensor_state.stations
+        if snaps:
+            freshest = max(s.last_ts for s in snaps.values())
+            if now - freshest > STALE_S:
+                age = int(now - freshest)
+                return Response(f'stale feeds ({age}s)', status=503, mimetype='text/plain')
         return Response('ok', status=200, mimetype='text/plain')
 
     @app.route('/api/state')
