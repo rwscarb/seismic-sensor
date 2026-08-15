@@ -4,7 +4,7 @@ Real-time seismic P-wave detector using a streaming neural network ensemble, dep
 
 ## How it works
 
-A 3-seed ensemble of **StreamingNet** models (1D CNN + orbit-permuted Hebbian buffer) listens to live SeedLink feeds from GEOFON and IRIS. When N_CONSENSUS stations independently fire within a 120-second window, a detection is logged. Epicenters are estimated via a flat-earth P-wave arrival time inversion (Nelder-Mead). Detections are cross-checked against USGS and EMSC earthquake catalogs.
+A 3-seed ensemble of **StreamingNet** models (1D CNN + orbit-permuted Hebbian buffer) listens to live SeedLink feeds from GEOFON and supplementary networks. When N_CONSENSUS stations independently fire within a 60-second window, a detection is logged. Epicenters are estimated via a flat-earth P-wave arrival time inversion (Nelder-Mead). Detections are cross-checked against USGS and EMSC earthquake catalogs.
 
 ```
 SeedLink stream → normalize → StreamingNet × 3 seeds → ensemble vote
@@ -23,9 +23,10 @@ Input: (3, 100)  — 3-component seismogram, 1 second at 100 Hz
 → Linear(128, 1)  — magnitude estimator
 ```
 
-The buffer permutation is seeded per ensemble member, diversifying the feature basis across seeds. Trained on the [STEAD dataset](https://github.com/smousavi05/STEAD) (chunk2) with magnitude-stratified sampling.
+The buffer permutation is seeded per ensemble member, diversifying the feature basis across seeds. Pre-trained on the [STEAD dataset](https://github.com/smousavi05/STEAD) (chunk2) with magnitude-stratified sampling, then fine-tuned on station-collected regional data.
 
-**Performance (STEAD holdout, threshold=0.835):** 88.0% precision / 95.7% recall
+**Performance (STEAD holdout, threshold=0.835):** 88.0% precision / 95.7% recall  
+**Performance (after regional fine-tune, eval split):** 94.4% / 93.2% / 93.2% precision across seeds, mean F1 = 0.919
 
 ## Stations
 
@@ -37,12 +38,14 @@ The buffer permutation is seeded per ensemble member, diversifying the feature b
 | GE | WLF | Walferdange, Luxembourg |
 | GE | MATE | Matera, Italy |
 | GE | KARP | Karpathos, Greece |
-| IU | COR | Corvallis, Oregon |
-| CN | PGC | Saanich, British Columbia |
-| IU | KDAK | Kodiak Island, Alaska |
-| IU | COLA | College, Alaska |
+| CX | PSGCX | Paso Grande, Chile |
+| CX | HMBCX | Humberstone, Chile |
+| DK | GDH | Godhavn, Greenland |
+| DK | SCO | Scoresbysund, Greenland |
 
-GEOFON stations stream via `geofon.gfz-potsdam.de:18000`. IRIS/CWBR stations stream via `rtserve.iris.washington.edu:18000`.
+Primary streams via `geofon.gfz-potsdam.de:18000` (GEOFON).
+
+**IRIS note:** `rtserve.iris.washington.edu:18000` was upgraded to RingServer/4.5.6 (SeedLink v4.0 protocol) in 2026. obspy `EasySeedLinkClient` (v3.1) is incompatible — station SELECT and DATA commands are rejected. IRIS stations (`IRIS_STATIONS` in `fly.toml`) currently do not stream successfully; set to empty if you want a clean log.
 
 ## Deploy
 
@@ -57,7 +60,9 @@ make deploy-clean
 make fly-logs
 ```
 
-## Train new seeds
+## Training
+
+### From scratch (STEAD)
 
 Requires [STEAD chunk2](https://zenodo.org/records/3911667):
 
@@ -67,12 +72,27 @@ wget -c 'https://zenodo.org/records/3911667/files/chunk2.csv'
 
 pip install torch numpy h5py scipy scikit-learn tqdm pandas
 
-python train.py --seeds 3 --epochs 30 --out checkpoints/
-# then redeploy to pick up new weights:
-make deploy-clean
+python train.py --data /data/training --checkpoints checkpoints/ --epochs 30
 ```
 
-GPU strongly recommended (RTX 3070 or better). CPU training for 3 seeds × 30 epochs takes several hours.
+GPU strongly recommended. CPU training for 3 seeds × 30 epochs takes several hours.
+
+### Regional fine-tuning
+
+`collect_regional.py` fetches P-wave windows for M5.5+ events at Pacific/Australian stations (IU.NWAO, II.WRAB, IU.MAJO, IU.SNZO) via IRIS FDSN, using IASP91 travel times to window around the P arrival:
+
+```bash
+python collect_regional.py   # saves .npz files to ./training/
+```
+
+Then fine-tune the existing ensemble on the collected windows:
+
+```bash
+python train.py --data training --checkpoints checkpoints --epochs 30 --lr 1e-4
+# checkpoints/seed_{n}_pretrain.pt backups are written before overwriting
+```
+
+Fine-tuning uses a two-phase schedule: classifier head only for the first half of epochs (higher LR), then all layers unfrozen at 10× lower LR. A class-balanced weighted sampler handles imbalanced positive/negative ratios.
 
 ## Local development
 
@@ -91,14 +111,18 @@ All parameters are set via environment variables (see `fly.toml` and `.env.examp
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SEEDLINK_SERVER` | `geofon.gfz-potsdam.de:18000` | Primary SeedLink server |
-| `IRIS_SERVER` | `rtserve.iris.washington.edu:18000` | Secondary SeedLink server |
+| `IRIS_SERVER` | `rtserve.iris.washington.edu:18000` | Secondary SeedLink server (see IRIS note above) |
 | `STATIONS` | `GE.APE,...` | Comma-separated station list for primary server |
 | `IRIS_STATIONS` | `IU.COR,...` | Comma-separated station list for secondary server |
 | `CHANNELS` | `HHZ,HHN,HHE` | Seismic channels |
 | `THRESHOLD` | `0.835` | Detection confidence threshold |
-| `N_CONSENSUS` | `3` | Stations required to confirm a detection |
-| `CONSENSUS_WINDOW` | `120` | Seconds within which consensus must occur |
+| `N_CONSENSUS` | `4` | Stations required to confirm a detection |
+| `CONSENSUS_WINDOW` | `60` | Seconds within which consensus must occur |
 | `N_SEEDS` | `3` | Ensemble size |
+| `STALTA_ON` | `1` | Enable STA/LTA pre-filter (blocks low-energy noise) |
+| `STALTA_SHORT_S` | `0.5` | STA window length (seconds) |
+| `STALTA_LONG_S` | `10.0` | LTA window length (seconds) |
+| `STALTA_THRESH` | `2.5` | Minimum STA/LTA ratio to pass to consensus |
 
 ## License
 
