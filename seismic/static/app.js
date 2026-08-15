@@ -728,24 +728,90 @@ function _notifMbOk(mb) {
     return notifMinMb === 0 || (mb != null && mb >= notifMinMb);
 }
 
+// P-wave: sharp knock (swept tone 180→55Hz + high-freq click transient)
+function _playPWave(ac) {
+    const t = ac.currentTime;
+    const osc = ac.createOscillator();
+    const env = ac.createGain();
+    osc.connect(env); env.connect(ac.destination);
+    osc.frequency.setValueAtTime(180, t);
+    osc.frequency.exponentialRampToValueAtTime(55, t + 0.3);
+    env.gain.setValueAtTime(0.45, t);
+    env.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+    osc.start(t); osc.stop(t + 0.45);
+    const click = ac.createOscillator();
+    const clickEnv = ac.createGain();
+    click.connect(clickEnv); clickEnv.connect(ac.destination);
+    click.frequency.value = 700;
+    clickEnv.gain.setValueAtTime(0.18, t);
+    clickEnv.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+    click.start(t); click.stop(t + 0.08);
+}
+
+// S-wave: deep sustained rumble (brown noise LPF + sawtooth body) — mb≥5
+function _playSWave(ac) {
+    const t = ac.currentTime;
+    const sr = ac.sampleRate;
+    const dur = 8.0;
+    const frames = Math.ceil(sr * dur);
+    const buf = ac.createBuffer(1, frames, sr);
+    const d = buf.getChannelData(0);
+    let prev = 0;
+    for (let i = 0; i < frames; i++) {
+        const white = Math.random() * 2 - 1;
+        prev = (prev + 0.02 * white) / 1.02;
+        d[i] = prev * 3.5;
+    }
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    const lpf = ac.createBiquadFilter();
+    lpf.type = 'lowpass'; lpf.frequency.value = 90;
+    const rumbleGain = ac.createGain();
+    rumbleGain.gain.setValueAtTime(0.0, t);
+    rumbleGain.gain.linearRampToValueAtTime(0.55, t + 1.2);
+    rumbleGain.gain.setValueAtTime(0.50, t + 3.5);
+    rumbleGain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(lpf); lpf.connect(rumbleGain); rumbleGain.connect(ac.destination);
+    src.start(t); src.stop(t + dur);
+    const body = ac.createOscillator();
+    const bodyGain = ac.createGain();
+    body.type = 'sawtooth';
+    body.frequency.setValueAtTime(40, t);
+    body.frequency.linearRampToValueAtTime(20, t + 5);
+    bodyGain.gain.setValueAtTime(0.0, t);
+    bodyGain.gain.linearRampToValueAtTime(0.22, t + 0.9);
+    bodyGain.gain.exponentialRampToValueAtTime(0.001, t + 6);
+    body.connect(bodyGain); bodyGain.connect(ac.destination);
+    body.start(t); body.stop(t + 6.2);
+}
+
+// Consensus alert: double beep (1100Hz + 880Hz)
+function _playDetectBeep(ac) {
+    const t = ac.currentTime;
+    [[0, 1100, 0.22], [0.12, 880, 0.16]].forEach(function (tone) {
+        const osc = ac.createOscillator();
+        const env = ac.createGain();
+        osc.connect(env); env.connect(ac.destination);
+        osc.type = 'sine'; osc.frequency.value = tone[1];
+        env.gain.setValueAtTime(tone[2], t + tone[0]);
+        env.gain.exponentialRampToValueAtTime(0.001, t + tone[0] + 0.1);
+        osc.start(t + tone[0]); osc.stop(t + tone[0] + 0.14);
+    });
+}
+
 function playDetectionAlert(mb) {
     if (!audioEnabled || !_notifMbOk(mb)) { return; }
     try {
         if (!audioCtx) { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
         if (audioCtx.state === 'suspended') { audioCtx.resume(); }
-        [[880, 0], [660, 0.18], [440, 0.32]].forEach(function (tone) {
-            const freq = tone[0], t = tone[1];
-            const osc  = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            osc.frequency.value = freq;
-            osc.type = 'sine';
-            gain.gain.setValueAtTime(0.25, audioCtx.currentTime + t);
-            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + t + 0.16);
-            osc.start(audioCtx.currentTime + t);
-            osc.stop(audioCtx.currentTime + t + 0.18);
-        });
+        _playDetectBeep(audioCtx);
+        _playPWave(audioCtx);
+        if (mb != null && mb >= 5.0) {
+            setTimeout(function () {
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                _playSWave(audioCtx);
+            }, 600);
+        }
     } catch (ignore) {}
 }
 
