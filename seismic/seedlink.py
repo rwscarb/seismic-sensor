@@ -34,6 +34,10 @@ def seedlink_loop(server, stations, models):
     from obspy.clients.seedlink.easyseedlink import EasySeedLinkClient
 
     class Sensor(EasySeedLinkClient):
+        def on_seedlink_error(self):
+            print(f"[{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}] [{server}] "
+                  f"SeedLink error — will retry", flush=True)
+
         def on_data(self, trace):
             net = trace.stats.network
             sta = trace.stats.station
@@ -96,7 +100,7 @@ def seedlink_loop(server, stations, models):
             client = Sensor(server)
             for net, sta in stations:
                 for ch in CHANNELS:
-                    client.select_stream(net, sta, ch)
+                    client.select_stream(net, sta, selectors=ch, seqnum=-1, timestamp=None)
             backoff = 5
             client.run()
         except KeyboardInterrupt:
