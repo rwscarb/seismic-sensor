@@ -1663,6 +1663,7 @@ function _mobTab(which, btn) {
     if (!scoreEl) { return; }
 
     let activeDays = 1;
+    let activeSinceRestart = false;
 
     function pct(n, d) { return d > 0 ? Math.round(n / d * 100) : '—'; }
     function col(v)     { return v >= 80 ? '#3fb950' : v >= 60 ? '#d29922' : '#f85149'; }
@@ -1682,7 +1683,7 @@ function _mobTab(which, btn) {
 
     function loadScoreboard() {
         scoreEl.style.opacity = '0.45';
-        const qs = '?days=' + activeDays;
+        var qs = '?days=' + activeDays + (activeSinceRestart ? '&since_restart=1' : '');
         Promise.all([
             fetch('/api/scoreboard' + qs).then(function (r) { return r.json(); }),
             fetch('/api/recall' + qs).then(function (r) { return r.json(); })
@@ -1706,6 +1707,7 @@ function _mobTab(which, btn) {
     winBtns.forEach(function (btn) {
         btn.addEventListener('click', function () {
             activeDays = parseInt(btn.dataset.days, 10);
+            activeSinceRestart = btn.dataset.sinceRestart === '1';
             winBtns.forEach(function (b) {
                 const active = b === btn;
                 b.style.color       = active ? '#58a6ff' : '#6e7681';
