@@ -259,5 +259,51 @@ class TestLocateEpicenter(unittest.TestCase):
         self.assertIsNone(result)
 
 
+class TestSeedlinkReconnect(unittest.TestCase):
+    """Verify that seedlink_loop sets conn.resume=False on each new client.
+    This prevents ObsPy from attempting FETCH/TIME on reconnect, which GEOFON rejects.
+    """
+
+    def test_resume_false_on_connect(self):
+        """conn.resume must be False before client.run() is called."""
+        from unittest.mock import patch
+        import seismic.seedlink as sl_mod
+
+        captured = {}
+
+        class FakeConn:
+            def __init__(self):
+                self.resume = True  # ObsPy default is True
+                self.streams = []
+            def add_stream(self, *a, **kw):
+                pass
+
+        class FakeClient:
+            def __init__(self, server_url):
+                self.conn = FakeConn()
+            def select_stream(self, net, sta, ch):
+                pass
+            def run(self):
+                captured['resume'] = self.conn.resume
+                raise KeyboardInterrupt  # stop the retry loop cleanly
+
+        # Patch the import inside seedlink_loop — it does a local import of
+        # EasySeedLinkClient, so we stub the containing module in sys.modules.
+        fake_esl_mod = types.ModuleType('obspy.clients.seedlink.easyseedlink')
+        fake_esl_mod.EasySeedLinkClient = FakeClient
+        with patch.dict(sys.modules, {
+            'obspy.clients.seedlink': types.ModuleType('obspy.clients.seedlink'),
+            'obspy.clients.seedlink.easyseedlink': fake_esl_mod,
+        }):
+            try:
+                sl_mod.seedlink_loop('fake:18000', [('GE', 'APE')], [])
+            except KeyboardInterrupt:
+                pass
+
+        self.assertIn('resume', captured, 'run() was never called')
+        self.assertFalse(captured['resume'],
+                         'conn.resume must be False to prevent FETCH/TIME on reconnect')
+
+
 if __name__ == '__main__':
     unittest.main()
