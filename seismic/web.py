@@ -31,7 +31,7 @@ def start_web_server():
 
     _recall_cache = {}   # {(days, minmag): (ts, result)}
     _recall_lock  = threading.Lock()
-    _RECALL_TTL   = 60.0
+    _RECALL_TTL   = 300.0  # 5 min — USGS fetch is slow; don't hammer on every scoreboard refresh
 
     app = Flask(__name__)
     import logging
@@ -200,21 +200,40 @@ def start_web_server():
           minmag (float, default 4.5) — minimum USGS magnitude to include
 
         Results are cached for _RECALL_TTL seconds to avoid hammering USGS.
+        Stale cache is returned immediately while a background refresh runs,
+        so the endpoint never blocks a Flask worker on a live USGS fetch.
         """
         from seismic.watcher import compute_recall_window
         days   = request.args.get('days',   default=7.0,  type=float)
         minmag = request.args.get('minmag', default=4.5,  type=float)
         cache_key = (days, minmag)
         now = time.time()
+
         with _recall_lock:
             cached = _recall_cache.get(cache_key)
-            if cached and now - cached[0] < _RECALL_TTL:
-                return jsonify(cached[1])
+
+        # Return cached result immediately (even if stale) and refresh in background
+        if cached:
+            age = now - cached[0]
+            if age > _RECALL_TTL:
+                # Kick off background refresh without blocking the response
+                def _bg_refresh():
+                    try:
+                        result = compute_recall_window(days=days, minmag=minmag)
+                        if 'error' not in result:
+                            with _recall_lock:
+                                _recall_cache[cache_key] = (time.time(), result)
+                    except Exception:
+                        pass
+                threading.Thread(target=_bg_refresh, daemon=True).start()
+            return jsonify(cached[1])
+
+        # First-ever fetch for this key — run synchronously but with short timeout guard
         result = compute_recall_window(days=days, minmag=minmag)
         if 'error' in result:
             return jsonify(result), 502
         with _recall_lock:
-            _recall_cache[cache_key] = (now, result)
+            _recall_cache[cache_key] = (time.time(), result)
         return jsonify(result)
 
     @app.route('/api/localize', methods=['POST'])
