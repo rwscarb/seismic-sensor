@@ -465,6 +465,8 @@ function _drawEpiViz(det, epicLat, epicLon) {
     const pVelMs = (CONFIG.pVelKmS || 8.0) * 1000;
     const offsets = det.arrival_offsets || {};
 
+    // ── Pass 1: draw lines and collect label candidates ─────────────────────
+    const _labelCandidates = [];
     (det.stations || []).forEach(function (key) {
         const coord = sCoords[key];
         if (!coord) { return; }
@@ -479,24 +481,98 @@ function _drawEpiViz(det, epicLat, epicLon) {
         const timing = dt == null ? '' : (dt === 0 ? ' (first)' : ' (' + (dt > 0 ? '+' : '') + dt.toFixed(1) + 's)');
         const label = key + timing;
 
-        const labelLat = epicLat + 0.2 * (coord[0] - epicLat);
-        const labelLon = epicLon + 0.2 * (coord[1] - epicLon);
         const p1 = map.latLngToContainerPoint([coord[0], coord[1]]);
         const p2 = map.latLngToContainerPoint([epicLat, epicLon]);
         let ang = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
         if (ang > 90)  { ang -= 180; }
         if (ang < -90) { ang += 180; }
 
-        const lm = L.marker([labelLat, labelLon], {
+        _labelCandidates.push({ key: key, coord: coord, label: label, ang: ang, p1: p1, p2: p2 });
+    });
+
+    // ── Pass 2: place labels with overlap resolution ───────────────────────────
+    // Strategy: for each label try (t along line) × (perpendicular flip) until
+    // the bounding box doesn't collide with already-placed labels.
+    // t=0.2 means 20% of the way from epicenter toward the station.
+    var _T_STEPS  = [0.20, 0.30, 0.40, 0.50];
+    var _PERP_PX  = 15;   // pixels perpendicular to line for flip
+    var _PERP_SEQ = [0, 1, -1];   // 0=on line, +1=left side, -1=right side
+    var _LBL_W    = 92;   // approx label half-width in px (generous)
+    var _LBL_H    = 8;    // approx label half-height in px
+
+    function _lbbox(cx, cy, angDeg) {
+        // Axis-aligned bounding box of a rotated label — conservative AABB
+        var r = angDeg * Math.PI / 180;
+        var hw = Math.abs(_LBL_W * Math.cos(r)) + Math.abs(_LBL_H * Math.sin(r));
+        var hh = Math.abs(_LBL_W * Math.sin(r)) + Math.abs(_LBL_H * Math.cos(r));
+        return { cx: cx, cy: cy, hw: hw, hh: hh };
+    }
+
+    function _bboxHit(a, b) {
+        var PAD = 5;
+        return Math.abs(a.cx - b.cx) < a.hw + b.hw + PAD
+            && Math.abs(a.cy - b.cy) < a.hh + b.hh + PAD;
+    }
+
+    var _placedBoxes = [];
+
+    _labelCandidates.forEach(function (c) {
+        var chosen = null;
+        var dx = c.p2.x - c.p1.x;
+        var dy = c.p2.y - c.p1.y;
+        var lineLen = Math.sqrt(dx * dx + dy * dy) || 1;
+        var nx = -dy / lineLen;   // unit perpendicular (left)
+        var ny =  dx / lineLen;
+
+        outer:
+        for (var ti = 0; ti < _T_STEPS.length; ti++) {
+            var t = _T_STEPS[ti];
+            for (var pi = 0; pi < _PERP_SEQ.length; pi++) {
+                var ps = _PERP_SEQ[pi];
+
+                // Base lat/lng along the line at parameter t
+                var baseLat = epicLat + t * (c.coord[0] - epicLat);
+                var baseLon = epicLon + t * (c.coord[1] - epicLon);
+                var baseP   = map.latLngToContainerPoint([baseLat, baseLon]);
+
+                // Apply perpendicular pixel offset
+                var sx = baseP.x + ps * _PERP_PX * nx;
+                var sy = baseP.y + ps * _PERP_PX * ny;
+
+                var bbox = _lbbox(sx, sy, c.ang);
+                var ok = true;
+                for (var j = 0; j < _placedBoxes.length; j++) {
+                    if (_bboxHit(bbox, _placedBoxes[j])) { ok = false; break; }
+                }
+
+                if (ok) {
+                    var ll = map.containerPointToLatLng([sx, sy]);
+                    chosen = { lat: ll.lat, lon: ll.lng, bbox: bbox, ang: c.ang };
+                    break outer;
+                }
+            }
+        }
+
+        if (!chosen) {
+            // No clean position found — fall back to t=0.2 on-line
+            var fbLat = epicLat + 0.2 * (c.coord[0] - epicLat);
+            var fbLon = epicLon + 0.2 * (c.coord[1] - epicLon);
+            var fbP   = map.latLngToContainerPoint([fbLat, fbLon]);
+            chosen = { lat: fbLat, lon: fbLon, bbox: _lbbox(fbP.x, fbP.y, c.ang), ang: c.ang };
+        }
+
+        _placedBoxes.push(chosen.bbox);
+
+        var lm = L.marker([chosen.lat, chosen.lon], {
             interactive: false,
             icon: L.divIcon({
                 className: '',
                 iconSize: [400, 24],
                 iconAnchor: [200, 12],
                 html: '<div style="width:400px;height:24px;display:flex;align-items:center;justify-content:center;'
-                    + 'transform:rotate(' + ang.toFixed(1) + 'deg);color:#c9d1d9;font-size:11px;font-weight:500;'
+                    + 'transform:rotate(' + chosen.ang.toFixed(1) + 'deg);color:#c9d1d9;font-size:11px;font-weight:500;'
                     + 'letter-spacing:.3px;text-shadow:0 0 4px #0d1117,0 0 4px #0d1117,0 0 6px #0d1117;'
-                    + 'white-space:nowrap;pointer-events:none">' + label + '</div>'
+                    + 'white-space:nowrap;pointer-events:none">' + c.label + '</div>'
             })
         }).addTo(map);
         _epiLines.push(lm);
