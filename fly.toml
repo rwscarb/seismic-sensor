@@ -40,7 +40,7 @@ primary_region = 'fra'
   force_https          = true
   auto_stop_machines   = "off"
   auto_start_machines  = false
-  min_machines_running = 1
+  min_machines_running = 2
 
   [[http_service.checks]]
     grace_period = "15s"
@@ -54,5 +54,5 @@ primary_region = 'fra'
   destination = "/data"
 
 [[vm]]
-  size   = 'shared-cpu-1x'
-  memory = '1gb'
+  size   = 'shared-cpu-2x'
+  memory = '2gb'
