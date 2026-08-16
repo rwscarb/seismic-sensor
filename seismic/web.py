@@ -204,9 +204,11 @@ def start_web_server():
         so the endpoint never blocks a Flask worker on a live USGS fetch.
         """
         from seismic.watcher import compute_recall_window
-        days   = request.args.get('days',   default=7.0,  type=float)
-        minmag = request.args.get('minmag', default=4.5,  type=float)
-        cache_key = (days, minmag)
+        days      = request.args.get('days',      default=7.0,   type=float)
+        minmag    = request.args.get('minmag',    default=4.5,   type=float)
+        since_restart = request.args.get('since_restart', default='0')
+        since_ts  = SERVER_START_TIME if since_restart not in ('0', 'false', '') else None
+        cache_key = (days, minmag, bool(since_ts))
         now = time.time()
 
         with _recall_lock:
@@ -219,7 +221,7 @@ def start_web_server():
                 # Kick off background refresh without blocking the response
                 def _bg_refresh():
                     try:
-                        result = compute_recall_window(days=days, minmag=minmag)
+                        result = compute_recall_window(days=days, minmag=minmag, since_ts=since_ts)
                         if 'error' not in result:
                             with _recall_lock:
                                 _recall_cache[cache_key] = (time.time(), result)
@@ -229,7 +231,7 @@ def start_web_server():
             return jsonify(cached[1])
 
         # First-ever fetch for this key — run synchronously but with short timeout guard
-        result = compute_recall_window(days=days, minmag=minmag)
+        result = compute_recall_window(days=days, minmag=minmag, since_ts=since_ts)
         if 'error' in result:
             return jsonify(result), 502
         with _recall_lock:

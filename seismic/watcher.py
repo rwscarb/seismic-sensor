@@ -105,18 +105,25 @@ def _slack_sig_event(event, expected_arrival, matched_det):
         print(f'  [sig-watch] slack failed: {e}', flush=True)
 
 
-def compute_recall_window(days: float = 7.0, minmag: float = 4.5) -> dict:
+def compute_recall_window(days: float = 7.0, minmag: float = 4.5, since_ts: float = None) -> dict:
     """Query USGS for all events in the past `days` days with mag >= minmag
     and check each against the detection log.
+
+    `since_ts` clamps the window start so events before the service came up
+    (e.g. during downtime) are not counted as misses.
 
     Returns a confusion-matrix dict:
       true_positives  : USGS events we detected
       false_negatives : USGS events we missed
       events          : list of per-event dicts with outcome
+      window_start    : effective UTC start of the scored window
+      window_end      : effective UTC end of the scored window
     """
     import urllib.request
     end_ts = time.time()
     start_ts = end_ts - days * 86400
+    if since_ts is not None and since_ts > start_ts:
+        start_ts = since_ts
     limit = max(200, int(days * 25))
     url = (
         f'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson'
@@ -171,6 +178,8 @@ def compute_recall_window(days: float = 7.0, minmag: float = 4.5) -> dict:
         'true_positives':   true_positives,
         'false_negatives':  false_negatives,
         'recall':           recall,
+        'window_start':     time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(start_ts)),
+        'window_end':       time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(end_ts)),
         'events':           sorted(events, key=lambda x: x['time'], reverse=True),
     }
 

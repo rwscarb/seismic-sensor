@@ -98,6 +98,11 @@ def seedlink_loop(server, stations, models):
     while True:
         try:
             client = Sensor(server)
+            # Disable ObsPy's internal reconnect logic so any dropped connection
+            # raises an exception here rather than silently reconnecting with
+            # stale sequence numbers (which triggers FETCH/TIME rejections).
+            client.conn.netto = 0       # no network timeout → no auto-reconnect
+            client.conn.keepalive = 0   # no keepalive pings
             for net, sta in stations:
                 for ch in CHANNELS:
                     client.select_stream(net, sta, ch)
