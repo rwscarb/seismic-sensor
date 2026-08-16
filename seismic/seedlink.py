@@ -100,7 +100,7 @@ def seedlink_loop(server, stations, models):
             client = Sensor(server)
             for net, sta in stations:
                 for ch in CHANNELS:
-                    client.select_stream(net, sta, selectors=ch, seqnum=-1, timestamp=None)
+                    client.select_stream(net, sta, ch)
             backoff = 5
             client.run()
         except KeyboardInterrupt:
