@@ -124,6 +124,8 @@ MB_DELAY_S = 15.0        # wait after detection before computing mb (P coda fill
 MB_WIN_S = 10.0          # P-wave measurement window length for mb
 
 
+FAULT_GEOJSON_URL = os.environ.get('FAULT_GEOJSON_URL', '/static/gem_active_faults.geojson')
+
 def fmt_mag(mag_est):
     if mag_est > MAG_MAX_CREDIBLE:
         return "---"

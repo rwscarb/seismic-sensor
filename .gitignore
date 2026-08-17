@@ -7,3 +7,8 @@ fixtures/
 training*
 .env
 *.tar.gz
+seismic/static/gem_active_faults.geojson
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/.terraform.lock.hcl

@@ -215,14 +215,23 @@ _faultsBtn.addEventListener('click', async function () {
         return;
     }
 
-    _faultLayer = L.tileLayer(
-        'https://earthquake.usgs.gov/arcgis/rest/services/eq/map_faults/MapServer/tile/{z}/{y}/{x}',
-        {
-            opacity: 0.6,
-            attribution: 'USGS Fault and Fold Database',
-            maxZoom: 18
-        }
-    ).addTo(map);
+    try {
+        _faultsBtn.textContent = '⏳ loading...';
+        const r = await fetch(CONFIG.faultGeojsonUrl || '/static/gem_active_faults.geojson');
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const geojson = await r.json();
+        _faultLayer = L.geoJSON(geojson, {
+            style: { color: '#e36209', weight: 1, opacity: 0.45 },
+            onEachFeature: function (f, layer) {
+                const props = f.properties || {};
+                const name = props.name || props.fault_name || props.FaultName || '';
+                if (name) { layer.bindTooltip(name, { sticky: true, className: 'fault-tip' }); }
+            }
+        }).addTo(map);
+    } catch (e) {
+        _faultOn = false;
+        console.warn('Failed to load fault data:', e.message);
+    }
     _setFaultBtnState();
 });
 

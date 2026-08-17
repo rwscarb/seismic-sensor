@@ -5,7 +5,7 @@ import time
 from seismic.config import (
     P_VEL_KM_S,
     WEB_PORT, THRESHOLD, N_CONSENSUS, STATIONS, ALL_STATIONS, SEEDLINK_SERVER,
-    USGS_MIN_MAG, EMSC_MIN_MAG, UMAMI_SITE_ID, LOC_MIN_STA,
+    USGS_MIN_MAG, EMSC_MIN_MAG, UMAMI_SITE_ID, LOC_MIN_STA, FAULT_GEOJSON_URL,
     CONSENSUS_WINDOW, USGS_SIG_MIN_MAG, SLACK_SIGNING_SECRET,
     SERVER_START_TIME, _LOG_BUF, _LOG_LOCK, MAPBOX_TOKEN, BTCVM_LEDGER_PATH,
 )
@@ -90,6 +90,7 @@ def start_web_server():
             emsc_min_mag=EMSC_MIN_MAG,
             umami_id=UMAMI_SITE_ID,
             station_coords_json=coords_json,
+            fault_geojson_url=FAULT_GEOJSON_URL,
             mapbox_token=MAPBOX_TOKEN,
             p_vel_km_s=P_VEL_KM_S,
             initial_state_json=json.dumps(state_data),

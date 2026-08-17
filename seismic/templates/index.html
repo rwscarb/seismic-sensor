@@ -19,7 +19,8 @@ window.SEISMIC_CONFIG={
   emscMag:{{ emsc_min_mag }},
   sCoords:{{ station_coords_json|safe }},
   mapboxToken:{{ mapbox_token|tojson }},
-  pVelKmS:{{ p_vel_km_s }}
+  pVelKmS:{{ p_vel_km_s }},
+  faultGeojsonUrl:{{ fault_geojson_url|tojson }}
 };
 window.SEISMIC_INITIAL_STATE={{ initial_state_json|safe }};
 </script>
