@@ -60,12 +60,14 @@ PER_STATION_COOLDOWN = float(os.environ.get('PER_STATION_COOLDOWN', '120.0'))  #
 CONF_HISTORY_DEPTH = int(os.environ.get('CONF_HISTORY_DEPTH', '120'))  # samples of conf history kept per station
 NOISE_PERSIST_S = float(os.environ.get('NOISE_PERSIST_S', '45.0'))  # exclude station from consensus if above threshold continuously this long
 N_CONSENSUS = int(os.environ.get('N_CONSENSUS', '2'))           # 2 = appropriate for sparse 5-station network
-CONSENSUS_WINDOW = float(os.environ.get('CONSENSUS_WINDOW', '60.0'))  # tightened from 120→60s
+CONSENSUS_WINDOW = float(os.environ.get('CONSENSUS_WINDOW', '90.0'))  # widened from 60→90s for cross-continental P delays
 MIN_LOGIT_GAP = float(os.environ.get('MIN_LOGIT_GAP', '0.0'))  # 0.0 = disabled until we have empirical baseline from real events
 STALTA_ON = os.environ.get('STALTA_ON', '1').lower() not in ('0', 'false', 'no')  # STA/LTA pre-filter
 STALTA_SHORT_S = float(os.environ.get('STALTA_SHORT_S', '0.5'))   # STA window (s)
 STALTA_LONG_S = float(os.environ.get('STALTA_LONG_S', '10.0'))    # LTA window (s)
 STALTA_THRESH = float(os.environ.get('STALTA_THRESH', '2.5'))     # ratio to pass pre-filter
+STALTA_LARGE_THRESH = float(os.environ.get('STALTA_LARGE_THRESH', '12.0'))  # ratio indicating large event
+THRESHOLD_LARGE = float(os.environ.get('THRESHOLD_LARGE', '0.45'))  # lowered conf threshold for large-event rescue
 P_VEL_KM_S = float(os.environ.get('P_VEL_KM_S', '8.0'))   # teleseismic P-wave speed
 LOC_MIN_STA = int(os.environ.get('LOC_MIN_STA', '3'))       # stations needed for location
 P_LEAD_S = float(os.environ.get('P_LEAD_S', '0.4'))         # model's pre-P horizon

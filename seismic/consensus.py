@@ -8,6 +8,7 @@ from seismic.config import (
     CHANNELS, N_CONSENSUS, CONSENSUS_WINDOW, THRESHOLD, ALERT_COOLDOWN,
     P_LEAD_S, MB_DELAY_S, MAG_MAX_CREDIBLE, LOC_MIN_STA, fmt_mag,
     PER_STATION_COOLDOWN, NOISE_PERSIST_S, MIN_LOGIT_GAP, WIN_SAMPLES,
+    STALTA_LARGE_THRESH, THRESHOLD_LARGE,
 )
 from seismic.localize import locate_epicenter, station_coords
 from seismic.model import refine_picks_phasenet
@@ -212,13 +213,23 @@ def _fire_detection(now, ts, conf, logit_gap, stations_fired, mean_gap=0.0):
 
 # ── Main inference callback ────────────────────────────────────────────────────
 
-def on_inference(net, sta, conf, mag_est, logit_gap, now):
+def on_inference(net, sta, conf, mag_est, logit_gap, now, stalta_ratio=0.0):
     ts = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now))
     key = station_key(net, sta)
     sensor_state.update_station(key, conf, mag_est)
 
+    # ── Effective threshold: lower it when STA/LTA indicates a large event ────
+    # Large teleseismic events (M6.5+) often have lower classifier confidence
+    # due to emergent onsets and frequency mismatch. If STA/LTA is very high
+    # (strong transient energy), rescue the detection with a lower threshold.
+    large_event_rescue = stalta_ratio >= STALTA_LARGE_THRESH
+    effective_threshold = THRESHOLD_LARGE if large_event_rescue else get_threshold()
+    if large_event_rescue and conf >= THRESHOLD_LARGE:
+        print(f"[{ts}] {key:<8}  LARGE-EVENT RESCUE  conf={conf:.3f}  "
+              f"stalta={stalta_ratio:.1f}  (threshold lowered to {THRESHOLD_LARGE})", flush=True)
+
     # ── Below threshold ──────────────────────────────────────────────────────
-    if conf < get_threshold():
+    if conf < effective_threshold:
         _cs.sta_above_since.pop(key, None)
         if now - station_status[key] > 10.0:
             if mag_est > MAG_MAX_CREDIBLE:

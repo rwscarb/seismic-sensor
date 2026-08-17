@@ -4,7 +4,7 @@ import numpy as np
 
 from seismic.config import (
     CHANNELS, TARGET_SRATE, WIN_SAMPLES, STRIDE,
-    STALTA_ON, STALTA_SHORT_S, STALTA_LONG_S, STALTA_THRESH,
+    STALTA_ON, STALTA_SHORT_S, STALTA_LONG_S, STALTA_THRESH, STALTA_LARGE_THRESH,
 )
 from seismic.consensus import station_key, station_rings, station_strides, on_inference
 from seismic.model import ensemble_predict, normalize_window
@@ -83,15 +83,18 @@ def seedlink_loop(server, stations, models):
             if STALTA_ON and conf >= 0.5 and ratio < STALTA_THRESH:
                 # Model thinks something is happening but waveform energy isn't transient
                 # enough — likely noise floor. Still update station state but skip consensus.
-                from seismic.state import sensor_state  # noqa: PLC0415
-                sensor_state.update_station(key, conf, mag_est)
-                return
+                # Exception: if STA/LTA is very high, this is a large-event rescue candidate —
+                # pass through even at low conf so consensus can decide.
+                if ratio < STALTA_LARGE_THRESH:
+                    from seismic.state import sensor_state  # noqa: PLC0415
+                    sensor_state.update_station(key, conf, mag_est)
+                    return
 
             # Noise window sampling for training data (quiet periods)
             from seismic.collector import maybe_save_noise_window  # noqa: PLC0415
             maybe_save_noise_window(key, now, conf)
 
-            on_inference(net, sta, conf, mag_est, logit_gap, now)
+            on_inference(net, sta, conf, mag_est, logit_gap, now, stalta_ratio=ratio)
 
     print(f"\nConnecting to {server} ({len(stations)} station(s))...", flush=True)
     backoff = 5

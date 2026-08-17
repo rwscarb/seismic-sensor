@@ -170,7 +170,18 @@ def refine_picks_phasenet(p_arr_snapshot):
 
 
 def normalize_window(w):
+    """Normalize each channel by its pre-signal baseline (first half of window).
+
+    Using the full-window std causes large-event normalization failure: a strong
+    P onset inflates the std, rescaling the onset itself toward zero before
+    the model sees it. Using the first-half (noise floor) std preserves the
+    relative amplitude of the onset and improves M6+ recall.
+    """
     w = w.copy()
+    half = max(1, w.shape[1] // 2)
     for i in range(3):
-        w[i] /= w[i].std() + 1e-6
+        baseline_std = float(w[i, :half].std()) + 1e-6
+        w[i] /= baseline_std
+        # Clip to ±30 std to prevent inf/nan from very large events
+        w[i] = np.clip(w[i], -30.0, 30.0)
     return w
