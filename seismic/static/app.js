@@ -215,14 +215,12 @@ _faultsBtn.addEventListener('click', async function () {
         return;
     }
 
-    _faultLayer = L.tileLayer.wms(
-        'https://earthquake.usgs.gov/arcgis/rest/services/eq/map_faults/MapServer/WMSServer',
+    _faultLayer = L.tileLayer(
+        'https://earthquake.usgs.gov/arcgis/rest/services/eq/map_faults/MapServer/tile/{z}/{y}/{x}',
         {
-            layers: '0',
-            format: 'image/png',
-            transparent: true,
-            opacity: 0.45,
-            attribution: 'USGS Fault and Fold Database'
+            opacity: 0.6,
+            attribution: 'USGS Fault and Fold Database',
+            maxZoom: 18
         }
     ).addTo(map);
     _setFaultBtnState();
