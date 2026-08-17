@@ -30,6 +30,11 @@ primary_region = 'fra'
   APP_URL              = 'https://seismic.fib896.com'
   TRAINING_DIR         = '/data/training'
   COLLECT              = '1'
+  OTTO_ENABLED         = '1'
+  OTTO_PUBKEY          = '2055e8120fc5711a558255be5f98c6a829dfd842b4745176ea8c4d836098af71'
+  OTTO_LAT             = '50.1'
+  OTTO_LON             = '8.7'
+  OTTO_STATION         = 'GE.MATE'
 
 [deploy]
   strategy     = "rolling"
