@@ -22,6 +22,28 @@ KNOWN_COORDS = {
     # North Atlantic / Arctic — Danish Seismological Network, via GEOFON
     'DK.GDH':   ( 69.249,  -53.528),  # Godthab (Nuuk), W Greenland
     'DK.SCO':   ( 70.483,  -21.967),  # Scoresbysund, E Greenland
+    # Africa — GEOFON
+    'GE.KIBK':  ( -4.213,   12.380),  # Kibangou, Congo
+    'GE.LBTB':  (-25.015,   25.597),  # Lobatse, Botswana
+    # Pacific — GEOFON
+    'GE.PMG':   ( -9.409,  147.154),  # Port Moresby, Papua New Guinea
+    'GE.HNR':   ( -9.433,  160.023),  # Honiara, Solomon Islands
+    # North America — IRIS/IU
+    'IU.ANMO':  ( 34.946, -106.457),  # Albuquerque, New Mexico
+    'IU.COR':   ( 44.585, -123.304),  # Corvallis, Oregon
+    # Pacific — IRIS/IU
+    'IU.KIP':   ( 21.423, -158.015),  # Kipapa, Hawaii
+    'IU.AFI':   (-13.909, -171.777),  # Afiamalu, Samoa
+    # East Asia — IRIS/IU
+    'IU.MAJO':  ( 36.546,  138.207),  # Matsushiro, Japan
+    'IU.TATO':  ( 24.975,  121.497),  # Taipei, Taiwan
+    # Oceania — IRIS/IU
+    'IU.NWAO':  (-32.928,  117.239),  # Narrogin, Australia
+    # South America — IRIS/IU
+    'IU.RCBR':  (-10.683,  -41.951),  # Riachuelo, Brazil
+    # Indian Ocean — IRIS/IU and II
+    'IU.MSEY':  ( -4.674,   55.479),  # Mahe, Seychelles
+    'II.DGAR':  ( -7.412,   72.453),  # Diego Garcia
 }
 
 station_coords = {}    # populated at startup

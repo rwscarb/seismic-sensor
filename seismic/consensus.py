@@ -186,6 +186,13 @@ def _fire_detection(now, ts, conf, logit_gap, stations_fired, mean_gap=0.0):
     from seismic.btcvm_anchor import anchor_detection  # noqa: PLC0415
     anchor_detection(det)
 
+    from seismic.otto_bridge import publish_detection   # noqa: PLC0415
+    publish_detection(
+        p_arrival = min((t for t in p_arr_snapshot.values()), default=now),
+        conf      = conf,
+        mag_est   = _mean_magnitude(stations_fired),
+    )
+
     from seismic.catalog import report_usgs_deferred  # noqa: PLC0415
     from seismic.magnitude import report_mb_deferred  # noqa: PLC0415
 
