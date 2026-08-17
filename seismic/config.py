@@ -125,6 +125,7 @@ MB_WIN_S = 10.0          # P-wave measurement window length for mb
 
 
 FAULT_GEOJSON_URL = os.environ.get('FAULT_GEOJSON_URL', '/static/gem_active_faults.geojson')
+API_KEY = os.environ.get('API_KEY', '')  # optional: if set, require X-API-Key header on external API endpoints
 
 def fmt_mag(mag_est):
     if mag_est > MAG_MAX_CREDIBLE:

@@ -8,6 +8,7 @@ from seismic.config import (
     USGS_MIN_MAG, EMSC_MIN_MAG, UMAMI_SITE_ID, LOC_MIN_STA, FAULT_GEOJSON_URL,
     CONSENSUS_WINDOW, USGS_SIG_MIN_MAG, SLACK_SIGNING_SECRET,
     SERVER_START_TIME, _LOG_BUF, _LOG_LOCK, MAPBOX_TOKEN, BTCVM_LEDGER_PATH,
+    API_KEY,
 )
 import seismic.runtime as _runtime
 from seismic.localize import station_coords, locate_epicenter
@@ -464,6 +465,128 @@ def start_web_server():
                 'response_type': 'ephemeral',
                 'text': f'Unknown subcommand `{sub}`. Try `/seismic help`.',
             })
+
+    def _require_api_key():
+        """Returns a 401 Response if API_KEY is set and the request doesn't supply it.
+        Returns None if auth passes (key not configured, or correct key supplied).
+        Accepts key via X-API-Key header or ?api_key= query param.
+        """
+        if not API_KEY:
+            return None  # auth disabled
+        supplied = request.headers.get('X-API-Key') or request.args.get('api_key', '')
+        if supplied == API_KEY:
+            return None
+        return Response(
+            json.dumps({'error': 'unauthorized', 'hint': 'supply X-API-Key header or ?api_key='}),
+            status=401, mimetype='application/json',
+        )
+
+    @app.route('/api/detections')
+    def api_detections():
+        """Paginated, filterable detection list.
+
+        Query params:
+          limit   (int,   default 50, max 500)
+          offset  (int,   default 0)
+          days    (float, default 0 = all-time)
+          minconf (float, default 0.0)
+          confirmed (bool: true/false, default unfiltered)
+        """
+        auth_err = _require_api_key()
+        if auth_err:
+            return auth_err
+
+        limit   = min(request.args.get('limit',   default=50,  type=int), 500)
+        offset  = request.args.get('offset',  default=0,   type=int)
+        days    = request.args.get('days',    default=0.0, type=float)
+        minconf = request.args.get('minconf', default=0.0, type=float)
+        confirmed_filter = request.args.get('confirmed', default=None)
+
+        with sensor_state._lock:
+            dets = list(sensor_state.detections)
+
+        if days > 0:
+            cutoff = time.time() - days * 86400
+            dets = [d for d in dets if (d.unix_ts or 0) >= cutoff]
+        if minconf > 0:
+            dets = [d for d in dets if d.conf >= minconf]
+        if confirmed_filter == 'true':
+            dets = [d for d in dets if d.usgs_checked and d.usgs is not None]
+        elif confirmed_filter == 'false':
+            dets = [d for d in dets if d.usgs_checked and d.usgs is None]
+
+        dets = list(reversed(dets))  # newest first
+        total = len(dets)
+        page  = dets[offset:offset + limit]
+
+        def _fmt(d):
+            row = {
+                'ts':          d.ts,
+                'unix_ts':     d.unix_ts,
+                'conf':        round(d.conf, 4),
+                'mb':          d.mb,
+                'mb_approx':   d.mb_approx,
+                'mb_local':    d.mb_local,
+                'stations':    list(d.stations),
+                'epicenter':   list(d.epicenter) if d.epicenter else None,
+                'teleseismic': d.teleseismic,
+                'usgs_checked': d.usgs_checked,
+                'usgs':        d.usgs,
+            }
+            return row
+
+        return jsonify({
+            'total':   total,
+            'offset':  offset,
+            'limit':   limit,
+            'detections': [_fmt(d) for d in page],
+        })
+
+    @app.route('/api/stations')
+    def api_stations():
+        """Current per-station snapshot: conf, mag estimate, last seen, flatline status."""
+        auth_err = _require_api_key()
+        if auth_err:
+            return auth_err
+
+        now  = time.time()
+        snap = sensor_state.to_dict()
+        rows = {}
+        for key, s in snap.get('stations', {}).items():
+            age = round(now - s['last_ts'], 1) if s.get('last_ts') else None
+            rows[key] = {
+                'conf':      round(s['conf'], 4),
+                'mag_est':   s.get('mag_est'),
+                'last_ts':   s.get('last_ts'),
+                'age_s':     age,
+                'flatline':  s.get('flatline', False),
+                'coords':    list(station_coords[key]) if key in station_coords else None,
+            }
+        return jsonify({'stations': rows, 'count': len(rows)})
+
+    @app.route('/api/config')
+    def api_config():
+        """Read-only view of current runtime config and thresholds."""
+        auth_err = _require_api_key()
+        if auth_err:
+            return auth_err
+
+        rt = _runtime.status_dict()
+        return jsonify({
+            'threshold':          rt['threshold'],
+            'threshold_override': rt['threshold_override'],
+            'threshold_default':  THRESHOLD,
+            'n_consensus':        N_CONSENSUS,
+            'consensus_window_s': CONSENSUS_WINDOW,
+            'usgs_min_mag':       USGS_MIN_MAG,
+            'emsc_min_mag':       EMSC_MIN_MAG,
+            'stations':           [f'{n}.{s}' for n, s in STATIONS],
+            'station_count':      len(ALL_STATIONS),
+            'seedlink':           SEEDLINK_SERVER,
+            'muted':              rt['muted'],
+            'muted_remaining_s':  rt.get('muted_remaining_s'),
+            'uptime_s':           round(time.time() - SERVER_START_TIME),
+        })
 
     @app.route('/api/backfill')
     def api_backfill():
