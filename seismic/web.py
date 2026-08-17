@@ -15,6 +15,14 @@ from seismic.state import sensor_state
 from seismic.watcher import _expected_p_arrival, _find_matching_detection
 
 
+_ensemble_models = None
+
+def set_ensemble_models(models):
+    """Called from sensor.py after load_ensemble() so /api/backfill can use them."""
+    global _ensemble_models
+    _ensemble_models = models
+
+
 def start_web_server():
     if WEB_PORT == 0:
         return
@@ -455,6 +463,34 @@ def start_web_server():
                 'response_type': 'ephemeral',
                 'text': f'Unknown subcommand `{sub}`. Try `/seismic help`.',
             })
+
+    @app.route('/api/backfill')
+    def api_backfill():
+        """Fetch historical waveforms and simulate detection for a past event.
+        Query params: lat, lon, time (ISO UTC or unix), label (optional)
+        e.g. /api/backfill?lat=-8.27&lon=121.51&time=2026-08-16T00:46:00Z
+        """
+        if _ensemble_models is None:
+            return jsonify({'error': 'models not loaded yet'}), 503
+        try:
+            lat   = float(request.args['lat'])
+            lon   = float(request.args['lon'])
+            label = request.args.get('label', '')
+            t_raw = request.args.get('time', '')
+            if not t_raw:
+                return jsonify({'error': 'missing ?time='}), 400
+            try:
+                origin_unix = float(t_raw)
+            except ValueError:
+                from datetime import datetime, timezone
+                origin_unix = datetime.strptime(
+                    t_raw.replace('Z', '+00:00'), '%Y-%m-%dT%H:%M:%S%z'
+                ).replace(tzinfo=timezone.utc).timestamp()
+        except (KeyError, ValueError) as e:
+            return jsonify({'error': f'bad params: {e}'}), 400
+        from seismic.backfill import evaluate_event
+        result = evaluate_event(lat, lon, origin_unix, _ensemble_models, label)
+        return jsonify(result)
 
     t = threading.Thread(
         target=lambda: app.run(host='0.0.0.0', port=WEB_PORT, threaded=True),

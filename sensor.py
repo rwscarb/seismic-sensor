@@ -32,7 +32,7 @@ from seismic.seedlink import seedlink_loop
 from seismic.state import sensor_state, _load_detections
 from seismic.tui import run_tui
 from seismic.watcher import poll_usgs_significant
-from seismic.web import start_web_server
+from seismic.web import start_web_server, set_ensemble_models
 from seismic.btcvm_anchor import start_batch_scheduler
 
 
@@ -115,6 +115,7 @@ if __name__ == '__main__':
         print(f"\nLoading checkpoints from {CHECKPOINT_DIR}...", flush=True)
         models = load_ensemble()
         print(f"  {N_SEEDS} models loaded.\n", flush=True)
+        set_ensemble_models(models)
         print("Loading PhaseNet (SeisBench)...", flush=True)
         load_phasenet()
 
