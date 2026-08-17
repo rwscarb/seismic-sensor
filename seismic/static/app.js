@@ -2,7 +2,7 @@
 
 const CONFIG = window.SEISMIC_CONFIG;
 const SETTINGS_KEY = 'seismic_settings';
-const FAULT_GEOJSON_URL = 'https://raw.githubusercontent.com/GEMScienceTools/gem-global-active-faults/master/geojson/gem_active_faults.geojson';
+// FAULT_GEOJSON_URL replaced with USGS WMS tile service (see fault toggle handler)
 const REPLAY_DWELL_MS = 2500;
 const FLY_ZOOM = 3;
 const FLY_DURATION = 1.0;
@@ -215,26 +215,16 @@ _faultsBtn.addEventListener('click', async function () {
         return;
     }
 
-    _faultLoading = true;
-    _setFaultBtnState();
-
-    try {
-        const r = await fetch(FAULT_GEOJSON_URL);
-        const geojson = await r.json();
-        _faultLayer = L.geoJSON(geojson, {
-            style: { color: '#e36209', weight: 1, opacity: 0.45 },
-            onEachFeature: function (f, layer) {
-                const props = f.properties || {};
-                const name = props.name || props.fault_name || props.FaultName || '';
-                if (name) { layer.bindTooltip(name, { sticky: true, className: 'fault-tip' }); }
-            }
-        }).addTo(map);
-    } catch (e) {
-        _faultOn = false;
-        alert('Failed to load fault data: ' + e.message);
-    }
-
-    _faultLoading = false;
+    _faultLayer = L.tileLayer.wms(
+        'https://earthquake.usgs.gov/arcgis/rest/services/eq/map_faults/MapServer/WMSServer',
+        {
+            layers: '0',
+            format: 'image/png',
+            transparent: true,
+            opacity: 0.45,
+            attribution: 'USGS Fault and Fold Database'
+        }
+    ).addTo(map);
     _setFaultBtnState();
 });
 
