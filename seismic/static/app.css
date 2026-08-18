@@ -180,3 +180,7 @@ body.fs-mode #fs-overlay{display:block}
   #event-log{display:none}
   #map-legend{display:none}
 }
+
+/* Epicenter cluster bubbles — strip Leaflet's default div-icon chrome
+   (white box + border) so only the flat colored circle from app.js shows. */
+.epi-cluster-icon{background:transparent!important;border:none!important}

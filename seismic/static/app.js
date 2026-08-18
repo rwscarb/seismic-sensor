@@ -149,12 +149,12 @@ const epiCluster = L.markerClusterGroup({
         }, 0);
         const color = _magColor(maxMb);
         const n = markers.length;
-        const size = n < 10 ? 32 : n < 50 ? 40 : 48;
+        const size = Math.round(Math.min(56, 22 + Math.sqrt(n) * 8));
         return L.divIcon({
             html: '<div style="background:' + color + ';width:100%;height:100%;'
                 + 'border-radius:50%;display:flex;align-items:center;justify-content:center;'
-                + 'border:2px solid #0d1117;color:#fff;font:600 ' + Math.round(size / 2.8)
-                + 'px system-ui,sans-serif;text-shadow:0 1px 2px rgba(0,0,0,.6)">' + n + '</div>',
+                + 'color:#fff;font:600 ' + Math.round(size / 2.6) + 'px system-ui,sans-serif">'
+                + n + '</div>',
             className: 'epi-cluster-icon',
             iconSize: [size, size],
         });
