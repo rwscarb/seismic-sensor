@@ -646,16 +646,42 @@ function zoomR(base) {
     return Math.max(2, base * f);
 }
 
-function _markerBaseStyle(usgs, dimmed) {
+// Sequential single-hue ramp (magnitude = "how much" → one hue, light to dark),
+// steps 100-700 from the dataviz skill's documented palette — not eyeballed.
+const _MAG_RAMP = ['#cde2fb', '#b7d3f6', '#9ec5f4', '#86b6ef', '#6da7ec', '#5598e7',
+                    '#3987e5', '#2a78d6', '#256abf', '#1c5cab', '#184f95', '#104281', '#0d366b'];
+
+function _hexToRgb(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function _magColor(mb) {
+    const t = Math.max(0, Math.min(1, ((mb || 4) - 2) / 5));  // M2→0, M7→1
+    const idx = t * (_MAG_RAMP.length - 1);
+    const lo = Math.floor(idx), hi = Math.min(_MAG_RAMP.length - 1, lo + 1);
+    const frac = idx - lo;
+    const a = _hexToRgb(_MAG_RAMP[lo]), b = _hexToRgb(_MAG_RAMP[hi]);
+    const r = Math.round(a[0] + (b[0] - a[0]) * frac);
+    const g = Math.round(a[1] + (b[1] - a[1]) * frac);
+    const bl = Math.round(a[2] + (b[2] - a[2]) * frac);
+    return 'rgb(' + r + ',' + g + ',' + bl + ')';
+}
+
+// Fill = magnitude (sequential, redundant with radius so small size deltas
+// still read at a glance). Border = confirmation status (solid vs dashed) —
+// kept on its own channel instead of color so the two encodings don't collide.
+function _markerBaseStyle(usgs, dimmed, mb) {
+    const fill = _magColor(mb);
     if (usgs) {
-        return { color: '#7048aa', weight: 1.5, fillColor: '#a371f7', fillOpacity: dimmed ? 0.25 : 0.85, dashArray: null };
+        return { color: '#0d1117', weight: 1.5, fillColor: fill, fillOpacity: dimmed ? 0.35 : 0.9, dashArray: null };
     }
-    return { color: '#6e3010', weight: 1, fillColor: '#f85149', fillOpacity: dimmed ? 0.15 : 0.5, dashArray: '5,3' };
+    return { color: '#8b949e', weight: 1, fillColor: fill, fillOpacity: dimmed ? 0.2 : 0.55, dashArray: '5,3' };
 }
 
 function applyMarkerSelection(skipPulse) {
     detMarkers.forEach(function (entry) {
-        const { m, ts, r, usgs } = entry;
+        const { m, ts, r, usgs, mb } = entry;
         if (ts === selectedDetTs) {
             m.setStyle({ color: '#2ea043', weight: 1.5, fillColor: '#3fb950', fillOpacity: 0.95, dashArray: null });
             if (!skipPulse && _pulseTs !== selectedDetTs) {
@@ -671,7 +697,7 @@ function applyMarkerSelection(skipPulse) {
             }
         } else {
             m.setRadius(zoomR(r));
-            m.setStyle(_markerBaseStyle(usgs, !!selectedDetTs));
+            m.setStyle(_markerBaseStyle(usgs, !!selectedDetTs, mb));
         }
     });
 
@@ -1311,7 +1337,7 @@ function _renderEpiMarkers(filteredDets) {
         const la = usgsCoords ? det.usgs.lat : det.epicenter[0];
         const lo = usgsCoords ? det.usgs.lon : det.epicenter[1];
         const mb = det.mb || 4;
-        const r  = Math.max(4, Math.min(14, (mb - 2) * 3 + 4));
+        const r  = Math.max(5, Math.min(20, (mb - 2) * 4 + 5));
 
         const mbLabel  = det.mb ? (det.mb_local ? 'local' : det.mb_approx ? 'mb~' + det.mb.toFixed(1) : 'mb=' + det.mb.toFixed(1)) : 'mb pending';
         const mbClass  = mb >= 5 ? 'high' : mb >= 4 ? 'mid' : 'low';
@@ -1372,7 +1398,7 @@ function _renderEpiMarkers(filteredDets) {
             + footHtml
             + '</div>';
 
-        const m = L.circleMarker([la, lo], Object.assign({ radius: zoomR(r) }, _markerBaseStyle(usgsCoords, false)))
+        const m = L.circleMarker([la, lo], Object.assign({ radius: zoomR(r) }, _markerBaseStyle(usgsCoords, false, mb)))
             .bindTooltip(tipHtml, { sticky: false, direction: 'top', className: 'det-tip' })
             .addTo(map);
 
@@ -1390,7 +1416,7 @@ function _renderEpiMarkers(filteredDets) {
 
         m.on('mouseout', function () { if (_pinnedMarker === m) { m.openTooltip(); } });
 
-        kept.push({ m, ts: det.ts, r, lat: la, lon: lo, usgs: usgsCoords });
+        kept.push({ m, ts: det.ts, r, lat: la, lon: lo, usgs: usgsCoords, mb });
     });
 
     detMarkers.length = 0;
