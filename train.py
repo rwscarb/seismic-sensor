@@ -35,6 +35,17 @@ parser.add_argument('--seeds',       type=int,   default=3)
 parser.add_argument('--min-samples', type=int,   default=50,
                     help='Abort if fewer than this many labeled samples exist')
 parser.add_argument('--eval-split',  type=float, default=0.2)
+parser.add_argument('--sample-power', type=float, default=0.5,
+                    help='Class-balance sampler exponent: 1.0 = full inverse-frequency '
+                         '(trains on an artificial ~50/50 world, tends to tank precision '
+                         'at real-world imbalance), 0.0 = no rebalancing at all. Default 0.5 '
+                         '(sqrt) softens the oversampling instead of fully flattening it.')
+parser.add_argument('--eval-threshold', type=float,
+                    default=float(os.environ.get('THRESHOLD', '0.5')),
+                    help='Report precision/recall/F1 at this softmax-probability cutoff too, '
+                         'in addition to the default argmax (0.5) split — argmax alone can '
+                         'look far worse than the model actually behaves at the threshold '
+                         'that is really used in production.')
 parser.add_argument('--dry-run',     action='store_true',
                     help='Load data and print stats; do not train or overwrite checkpoints')
 parser.add_argument('--no-backup',   action='store_true',
@@ -130,10 +141,15 @@ yt = torch.tensor(y_train)
 Xe = torch.tensor(X_eval)
 ye = torch.tensor(y_eval)
 
-# Weighted sampler to handle class imbalance
+# Weighted sampler to handle class imbalance. Full inverse-frequency (power=1.0)
+# trains on an artificial ~50/50 batch distribution, which pushes the model's
+# implicit prior toward "positive is common" — that mismatches the real,
+# heavily-skewed deployment distribution and shows up as high recall but
+# collapsed precision. A softer power partially compensates without fully
+# flattening it.
 class_counts = np.bincount(y_train, minlength=2).astype(float)
 class_counts = np.maximum(class_counts, 1)
-weights = 1.0 / class_counts
+weights = 1.0 / (class_counts ** args.sample_power)
 sample_weights = torch.tensor([weights[y] for y in y_train], dtype=torch.float)
 sampler = WeightedRandomSampler(sample_weights, num_samples=len(sample_weights), replacement=True)
 train_ds = TensorDataset(Xt, yt)
@@ -193,29 +209,45 @@ for seed in range(n_seeds):
         if (epoch + 1) % 5 == 0 or epoch == args.epochs - 1:
             model.eval()
             tp = fp = fn = tn = 0
+            tp_t = fp_t = fn_t = tn_t = 0
             with torch.no_grad():
                 for xb, yb in eval_dl:
-                    preds = model(xb)[0].argmax(1)
+                    logits = model(xb)[0]
+                    preds = logits.argmax(1)
                     tp += ((preds == 1) & (yb == 1)).sum().item()
                     fp += ((preds == 1) & (yb == 0)).sum().item()
                     fn += ((preds == 0) & (yb == 1)).sum().item()
                     tn += ((preds == 0) & (yb == 0)).sum().item()
+
+                    prob = torch.softmax(logits, dim=1)[:, 1]
+                    preds_t = (prob >= args.eval_threshold).long()
+                    tp_t += ((preds_t == 1) & (yb == 1)).sum().item()
+                    fp_t += ((preds_t == 1) & (yb == 0)).sum().item()
+                    fn_t += ((preds_t == 0) & (yb == 1)).sum().item()
+                    tn_t += ((preds_t == 0) & (yb == 0)).sum().item()
             prec = tp / max(1, tp + fp)
             rec  = tp / max(1, tp + fn)
             f1   = 2 * prec * rec / max(1e-9, prec + rec)
+            prec_t = tp_t / max(1, tp_t + fp_t)
+            rec_t  = tp_t / max(1, tp_t + fn_t)
+            f1_t   = 2 * prec_t * rec_t / max(1e-9, prec_t + rec_t)
             train_acc = n_correct / max(1, n_total)
             print(f'  epoch {epoch+1:3d}  loss={total_loss/n_total:.4f}  '
                   f'train_acc={train_acc:.3f}  '
-                  f'prec={prec:.3f}  rec={rec:.3f}  F1={f1:.3f}  '
-                  f'(tp={tp} fp={fp} fn={fn} tn={tn})')
+                  f'[argmax] prec={prec:.3f} rec={rec:.3f} F1={f1:.3f}  '
+                  f'(tp={tp} fp={fp} fn={fn} tn={tn})  |  '
+                  f'[@{args.eval_threshold:.3f}] prec={prec_t:.3f} rec={rec_t:.3f} F1={f1_t:.3f}  '
+                  f'(tp={tp_t} fp={fp_t} fn={fn_t} tn={tn_t})')
 
     torch.save(model.state_dict(), ckpt_path)
     print(f'  Saved → {ckpt_path}')
-    all_results.append({'seed': seed, 'prec': prec, 'rec': rec, 'f1': f1})
+    all_results.append({'seed': seed, 'prec': prec_t, 'rec': rec_t, 'f1': f1_t,
+                         'prec_argmax': prec, 'rec_argmax': rec, 'f1_argmax': f1})
 
-print('\n=== Summary ===')
+print(f'\n=== Summary (metrics @ eval-threshold={args.eval_threshold:.3f}) ===')
 for r in all_results:
-    print(f"  seed {r['seed']}: prec={r['prec']:.3f}  rec={r['rec']:.3f}  F1={r['f1']:.3f}")
+    print(f"  seed {r['seed']}: prec={r['prec']:.3f}  rec={r['rec']:.3f}  F1={r['f1']:.3f}  "
+          f"(argmax: prec={r['prec_argmax']:.3f} rec={r['rec_argmax']:.3f} F1={r['f1_argmax']:.3f})")
 avg_f1 = np.mean([r['f1'] for r in all_results])
 print(f"\n  Mean F1: {avg_f1:.3f}")
 if avg_f1 < 0.7:

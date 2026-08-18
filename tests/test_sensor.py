@@ -142,10 +142,11 @@ def _pulse_window(onset_idx, n=100, amp=20.0, seed=0):
 
 
 class TestNormalizeWindow(unittest.TestCase):
-    """The window is a causal buffer sliding forward while the onset stays
-    put, so onset position ranges from the tail (just arrived) to the head
-    (aged, about to fall out of the buffer). Normalization must not
-    self-suppress the signal regardless of which half it currently sits in.
+    """Full-window std normalization (matching what the model was trained
+    on), reverted 2026-08-18 after a per-half variant collapsed live recall
+    to ~0 despite looking correct in synthetic/offline tests — see the
+    docstring on normalize_window for the incident writeup. These tests
+    cover the reverted (in-distribution) behavior only.
     """
 
     def test_no_nan_or_inf_for_any_onset_position(self):
@@ -158,14 +159,13 @@ class TestNormalizeWindow(unittest.TestCase):
         w = sensor.normalize_window(_pulse_window(50, amp=1000.0))
         self.assertLessEqual(np.abs(w).max(), 30.0)
 
-    def test_onset_survives_regardless_of_aging_into_first_half(self):
-        # Signal peak after normalization should stay clearly above noise
-        # (~1.0 std) whether the onset is fresh (second half) or has aged
-        # into the first half of the window.
+    def test_onset_is_still_visible_above_noise(self):
+        # A weaker bar than SNR-preservation across onset position — just
+        # confirms a real onset isn't normalized away to nothing.
         for onset_idx in (90, 70, 50, 30, 10, 0):
             w = sensor.normalize_window(_pulse_window(onset_idx))
             self.assertGreater(
-                np.abs(w[0]).max(), 5.0,
+                np.abs(w[0]).max(), 2.0,
                 f'onset at idx {onset_idx} was suppressed by normalization',
             )
 

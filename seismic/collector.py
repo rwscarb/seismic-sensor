@@ -65,9 +65,8 @@ def _window_from_ring(ring: dict, channels: list) -> tuple:
         list(ring[ch])[-WIN_SAMPLES:]
         for ch in channels
     ], dtype=np.float32)
-    normed = raw.copy()
-    for i in range(len(channels)):
-        normed[i] /= normed[i].std() + 1e-6
+    from seismic.model import normalize_window  # noqa: PLC0415
+    normed = normalize_window(raw)
     return normed, raw
 
 
