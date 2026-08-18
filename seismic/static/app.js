@@ -144,7 +144,7 @@ const epiCluster = L.markerClusterGroup({
     iconCreateFunction: function (cluster) {
         const markers = cluster.getAllChildMarkers();
         const maxMb = markers.reduce(function (m, mk) {
-            return Math.max(m, mk.options._mb || 0);
+            return Math.max(m, mk._detMb || 0);
         }, 0);
         const color = _magColor(maxMb);
         const n = markers.length;
@@ -683,7 +683,8 @@ function _hexToRgb(hex) {
 }
 
 function _magColor(mb) {
-    const t = Math.max(0, Math.min(1, ((mb || 4) - 2) / 5));  // M2→0, M7→1
+    const mbVal = (mb != null) ? mb : 4;  // 0 is a real (if unlikely) magnitude, not "missing"
+    const t = Math.max(0, Math.min(1, (mbVal - 2) / 5));  // M2→0, M7→1
     const idx = t * (_MAG_RAMP.length - 1);
     const lo = Math.floor(idx), hi = Math.min(_MAG_RAMP.length - 1, lo + 1);
     const frac = idx - lo;
@@ -1424,8 +1425,13 @@ function _renderEpiMarkers(filteredDets) {
             + footHtml
             + '</div>';
 
-        const m = L.circleMarker([la, lo], Object.assign({ radius: zoomR(r), _mb: mb }, _markerBaseStyle(usgsCoords, false, mb)))
+        const m = L.circleMarker([la, lo], Object.assign({ radius: zoomR(r) }, _markerBaseStyle(usgsCoords, false, mb)))
             .bindTooltip(tipHtml, { sticky: false, direction: 'top', className: 'det-tip' });
+        // Plain property, not a Leaflet .options key — options can get
+        // cloned/rebuilt by markercluster internals, which was silently
+        // dropping a custom _mb option and making every cluster compute
+        // the exact same fallback color regardless of what was inside it.
+        m._detMb = mb;
         epiCluster.addLayer(m);
 
         m.on('click', function (e) {
