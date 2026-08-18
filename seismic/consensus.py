@@ -296,10 +296,14 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now, stalta_ratio=0.0):
 
     # ── Gate checks before firing ─────────────────────────────────────────────
     cooldown_ok = now - _cs.last_alert > ALERT_COOLDOWN
-    gap_ok      = _mean_logit_gap(stations_fired) >= MIN_LOGIT_GAP
+    mean_gap    = _mean_logit_gap(stations_fired)
+    gap_ok      = mean_gap >= MIN_LOGIT_GAP
     all_cooled  = _all_stations_cooled(stations_fired, now)
 
     if not cooldown_ok or not gap_ok or all_cooled:
+        print(f"  [{ts}] consensus met but gated: "
+              f"cooldown_ok={cooldown_ok} gap_ok={gap_ok} (gap={mean_gap:.2f} "
+              f"min={MIN_LOGIT_GAP}) all_cooled={all_cooled}", flush=True)
         return
 
     # ── Second-stage classifier veto ─────────────────────────────────────────
@@ -322,6 +326,5 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now, stalta_ratio=0.0):
     for k in stations_fired:
         _cs.sta_last_alert[k] = now
 
-    mean_gap = _mean_logit_gap(stations_fired)
     _cs.recent.clear()
     _fire_detection(now, ts, conf, logit_gap, stations_fired, mean_gap)
