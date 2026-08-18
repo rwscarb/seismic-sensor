@@ -84,9 +84,10 @@ os.environ.setdefault('CHECKPOINT_DIR', '/tmp')
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from seismic.localize import haversine_km, p_travel_time_s, locate_epicenter, station_coords
-from seismic.config import fmt_mag
+from seismic.config import fmt_mag, CONSENSUS_WINDOW
 from seismic.state import SensorState, DetectionSnap, MAX_DETECTIONS
 from seismic.model import normalize_window
+from seismic import consensus as _consensus
 
 # Build a 'sensor' namespace so test bodies need no changes
 import types as _types
@@ -100,6 +101,33 @@ sensor = _types.SimpleNamespace(
     DetectionSnap=DetectionSnap,
     normalize_window=normalize_window,
 )
+
+
+class TestAnyRescued(unittest.TestCase):
+    """The second-stage veto classifier is trained on regional-event data
+    with the same self-suppressing normalization the large-event rescue
+    path exists to work around, so rescued detections must skip its veto.
+    """
+
+    def setUp(self):
+        _consensus._cs.rescued_at.clear()
+
+    def test_no_rescue_recorded(self):
+        self.assertFalse(_consensus._any_rescued({'GE.APE'}, 1000.0))
+
+    def test_recent_rescue_for_firing_station(self):
+        _consensus._cs.rescued_at['GE.APE'] = 1000.0
+        self.assertTrue(_consensus._any_rescued({'GE.APE', 'GE.WLF'}, 1010.0))
+
+    def test_rescue_outside_consensus_window_does_not_count(self):
+        _consensus._cs.rescued_at['GE.APE'] = 1000.0
+        self.assertFalse(
+            _consensus._any_rescued({'GE.APE'}, 1000.0 + CONSENSUS_WINDOW + 1)
+        )
+
+    def test_rescue_on_non_firing_station_does_not_count(self):
+        _consensus._cs.rescued_at['GE.APE'] = 1000.0
+        self.assertFalse(_consensus._any_rescued({'GE.WLF'}, 1005.0))
 
 
 def _pulse_window(onset_idx, n=100, amp=20.0, seed=0):

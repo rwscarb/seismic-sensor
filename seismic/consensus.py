@@ -37,6 +37,7 @@ class _ConsensusState:
     sta_above_since: dict = {}   # key → unix time station crossed threshold
     suppressed_count: int = 0
     suppressed_last_report: float = 0.0
+    rescued_at: dict = {}        # key → unix time of last large-event-rescue qualifying inference
 
 
 _cs = _ConsensusState()
@@ -88,6 +89,20 @@ def _mean_magnitude(stations_fired, fallback=0.0):
 def _all_stations_cooled(stations_fired, now):
     return all(
         now - _cs.sta_last_alert.get(k, 0.0) < PER_STATION_COOLDOWN
+        for k in stations_fired
+    )
+
+
+def _any_rescued(stations_fired, now):
+    """True if any firing station qualified via the large-event rescue path
+    recently (within the consensus window). The second-stage veto classifier
+    is trained on regional-event data with the same normalization scheme
+    that self-suppresses large onsets — it isn't a reliable judge of
+    teleseismic events the rescue path exists to catch, so we trust the
+    STA/LTA signal instead of subjecting rescued detections to its veto.
+    """
+    return any(
+        now - _cs.rescued_at.get(k, -1e9) <= CONSENSUS_WINDOW
         for k in stations_fired
     )
 
@@ -225,6 +240,7 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now, stalta_ratio=0.0):
     large_event_rescue = stalta_ratio >= STALTA_LARGE_THRESH
     effective_threshold = THRESHOLD_LARGE if large_event_rescue else get_threshold()
     if large_event_rescue and conf >= THRESHOLD_LARGE:
+        _cs.rescued_at[key] = now
         print(f"[{ts}] {key:<8}  LARGE-EVENT RESCUE  conf={conf:.3f}  "
               f"stalta={stalta_ratio:.1f}  (threshold lowered to {THRESHOLD_LARGE})", flush=True)
 
@@ -287,13 +303,19 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now, stalta_ratio=0.0):
         return
 
     # ── Second-stage classifier veto ─────────────────────────────────────────
-    from seismic import classifier as _clf  # noqa: PLC0415
-    clf_prob, clf_suppress = _clf.score(stations_fired, station_rings, CHANNELS, WIN_SAMPLES)
-    if clf_suppress:
-        print(f"  [{ts}] VETOED by classifier (prob={clf_prob:.3f})", flush=True)
-        return
-    if clf_prob is not None:
-        print(f"  [{ts}] classifier OK (prob={clf_prob:.3f})", flush=True)
+    # Skipped for large-event rescues: the veto classifier is trained on
+    # regional-event data normalized the same self-suppressing way the
+    # rescue path was built to work around, so it isn't a fair judge here.
+    if _any_rescued(stations_fired, now):
+        print(f"  [{ts}] classifier veto skipped (large-event rescue)", flush=True)
+    else:
+        from seismic import classifier as _clf  # noqa: PLC0415
+        clf_prob, clf_suppress = _clf.score(stations_fired, station_rings, CHANNELS, WIN_SAMPLES)
+        if clf_suppress:
+            print(f"  [{ts}] VETOED by classifier (prob={clf_prob:.3f})", flush=True)
+            return
+        if clf_prob is not None:
+            print(f"  [{ts}] classifier OK (prob={clf_prob:.3f})", flush=True)
 
     # ── Fire ──────────────────────────────────────────────────────────────────
     _cs.last_alert = now
