@@ -4,7 +4,6 @@ const CONFIG = window.SEISMIC_CONFIG;
 const SETTINGS_KEY = 'seismic_settings';
 // FAULT_GEOJSON_URL replaced with USGS WMS tile service (see fault toggle handler)
 const REPLAY_DWELL_MS = 2500;
-const FLY_ZOOM = 3;
 const FLY_DURATION = 1.0;
 
 
@@ -773,7 +772,7 @@ function flyToEpi(lat, lon, ts) {
     // selection doesn't visibly fly across the screen during the pan.
     if (_pulseIv) { clearInterval(_pulseIv); _pulseIv = null; _pulseTs = null; }
     _mapFlying = true;
-    map.flyTo([lat, lon], FLY_ZOOM, { duration: FLY_DURATION, easeLinearity: 0.5 });
+    map.flyTo([lat, lon], map.getZoom(), { duration: FLY_DURATION, easeLinearity: 0.5 });
     map.once('moveend', function () {
         _mapFlying = false;
         applyMarkerSelection();
@@ -1040,7 +1039,7 @@ function _initReplayControls() {
                 const la = det.usgs && det.usgs.lat != null ? det.usgs.lat : det.epicenter[0];
                 const lo = det.usgs && det.usgs.lon != null ? det.usgs.lon : det.epicenter[1];
                 _mapFlying = true;
-                map.flyTo([la, lo], FLY_ZOOM, { duration: 0.6, easeLinearity: 0.5 });
+                map.flyTo([la, lo], map.getZoom(), { duration: 0.6, easeLinearity: 0.5 });
                 map.once('moveend', function () { _mapFlying = false; applyMarkerSelection(); });
             }
         });
@@ -1376,7 +1375,7 @@ function _renderEpiMarkers(filteredDets) {
         const origLo   = hasOrig ? det.epicenter[1] : null;
         const origStr  = hasOrig ? Math.abs(origLa).toFixed(2) + '°' + (origLa >= 0 ? 'N' : 'S') + ' ' + Math.abs(origLo).toFixed(2) + '°' + (origLo >= 0 ? 'E' : 'W') : '';
         const origLink = hasOrig
-            ? '<div class="tip-loc-orig"><a href="#" onclick="event.preventDefault();event.stopPropagation();map.flyTo([' + origLa + ',' + origLo + '],3,{duration:1.0})">sensor: ' + origStr + '</a></div>'
+            ? '<div class="tip-loc-orig"><a href="#" onclick="event.preventDefault();event.stopPropagation();map.flyTo([' + origLa + ',' + origLo + '],map.getZoom(),{duration:1.0})">sensor: ' + origStr + '</a></div>'
             : '';
 
         const teleBadge = det.teleseismic ? '<span class="tip-badge tele">teleseismic</span>' : '';
@@ -1398,7 +1397,7 @@ function _renderEpiMarkers(filteredDets) {
         const stasRow = '<div class="tip-row"><span class="tip-row-label">stations</span><span class="tip-stas-val">' + det.stations.join(' · ') + '</span></div>';
         const locRow  = '<div class="tip-row"><span class="tip-row-label">' + locSrc.toLowerCase() + '</span><span class="tip-loc-val">' + Math.abs(la).toFixed(2) + '°' + (la >= 0 ? 'N' : 'S') + ' ' + Math.abs(lo).toFixed(2) + '°' + (lo >= 0 ? 'E' : 'W') + '</span></div>';
         const origRow = hasOrig
-            ? '<div class="tip-row tip-loc-orig"><span class="tip-row-label">sensor</span><a href="#" onclick="event.preventDefault();event.stopPropagation();map.flyTo([' + origLa + ',' + origLo + '],3,{duration:1.0})">' + Math.abs(origLa).toFixed(2) + '°' + (origLa >= 0 ? 'N' : 'S') + ' ' + Math.abs(origLo).toFixed(2) + '°' + (origLo >= 0 ? 'E' : 'W') + '</a></div>'
+            ? '<div class="tip-row tip-loc-orig"><span class="tip-row-label">sensor</span><a href="#" onclick="event.preventDefault();event.stopPropagation();map.flyTo([' + origLa + ',' + origLo + '],map.getZoom(),{duration:1.0})">' + Math.abs(origLa).toFixed(2) + '°' + (origLa >= 0 ? 'N' : 'S') + ' ' + Math.abs(origLo).toFixed(2) + '°' + (origLo >= 0 ? 'E' : 'W') + '</a></div>'
             : '';
 
         const eid      = usgsCoords && det.usgs.event_id;
@@ -1583,7 +1582,7 @@ function _updateBody(d) {
             selectedDetTs = newestEpi.ts;
             applyRowSelection();
             _mapFlying = true;
-            map.flyTo([la, lo], FLY_ZOOM, { duration: FLY_DURATION, easeLinearity: 0.5 });
+            map.flyTo([la, lo], map.getZoom(), { duration: FLY_DURATION, easeLinearity: 0.5 });
             map.once('moveend', function () { _mapFlying = false; applyMarkerSelection(); });
             _drawEpiViz(newestEpi, la, lo);
         }
@@ -1816,7 +1815,7 @@ setInterval(update, 3000);
                     const entry = detMarkers.find(function (x) { return x.ts === ts; });
                     if (entry) {
                         const ll = entry.m.getLatLng();
-                        map.flyTo([ll.lat, ll.lng], FLY_ZOOM, { duration: 1.2, easeLinearity: 0.5 });
+                        map.flyTo([ll.lat, ll.lng], map.getZoom(), { duration: 1.2, easeLinearity: 0.5 });
                     }
                 }
                 return;
