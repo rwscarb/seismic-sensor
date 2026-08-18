@@ -133,6 +133,33 @@ if (loadSettings().satOn) { _applySat(true); }
 
 const staMarkers = {};
 const detMarkers = [];
+
+// Epicenter markers cluster at low zoom so a large detection history doesn't
+// pile into an unreadable stack of overlapping circles. Cluster color reuses
+// the same magnitude ramp as the individual markers — a cluster containing a
+// big event should read as "big" before you even expand it.
+const epiCluster = L.markerClusterGroup({
+    maxClusterRadius: 50,
+    spiderfyOnMaxZoom: true,
+    showCoverageOnHover: false,
+    iconCreateFunction: function (cluster) {
+        const markers = cluster.getAllChildMarkers();
+        const maxMb = markers.reduce(function (m, mk) {
+            return Math.max(m, mk.options._mb || 0);
+        }, 0);
+        const color = _magColor(maxMb);
+        const n = markers.length;
+        const size = n < 10 ? 32 : n < 50 ? 40 : 48;
+        return L.divIcon({
+            html: '<div style="background:' + color + ';width:100%;height:100%;'
+                + 'border-radius:50%;display:flex;align-items:center;justify-content:center;'
+                + 'border:2px solid #0d1117;color:#fff;font:600 ' + Math.round(size / 2.8)
+                + 'px system-ui,sans-serif;text-shadow:0 1px 2px rgba(0,0,0,.6)">' + n + '</div>',
+            className: 'epi-cluster-icon',
+            iconSize: [size, size],
+        });
+    },
+}).addTo(map);
 let sCoords = CONFIG.sCoords;
 let lastFlyTs = null, lastFlyLat = null, lastFlyLon = null;
 let selectedDetTs = null;
@@ -380,7 +407,7 @@ function fmtLocal(isoStr) {
     sel.addEventListener('change', function () {
         _userTz = sel.value;
         localStorage.setItem('tz', _userTz);
-        detMarkers.forEach(function (entry) { map.removeLayer(entry.m); });
+        detMarkers.forEach(function (entry) { epiCluster.removeLayer(entry.m); });
         detMarkers.length = 0;
         update();
     });
@@ -1320,7 +1347,7 @@ function _renderEpiMarkers(filteredDets) {
         const newLon = usgsC ? det.usgs.lon : (det && det.epicenter ? det.epicenter[1] : null);
         const moved  = newLat != null && (Math.abs(newLat - entry.lat) > 0.5 || Math.abs(newLon - entry.lon) > 0.5);
         if (!epiTsSet.has(entry.ts) || moved) {
-            map.removeLayer(entry.m);
+            epiCluster.removeLayer(entry.m);
         } else {
             keptTs.add(entry.ts);
         }
@@ -1398,9 +1425,9 @@ function _renderEpiMarkers(filteredDets) {
             + footHtml
             + '</div>';
 
-        const m = L.circleMarker([la, lo], Object.assign({ radius: zoomR(r) }, _markerBaseStyle(usgsCoords, false, mb)))
-            .bindTooltip(tipHtml, { sticky: false, direction: 'top', className: 'det-tip' })
-            .addTo(map);
+        const m = L.circleMarker([la, lo], Object.assign({ radius: zoomR(r), _mb: mb }, _markerBaseStyle(usgsCoords, false, mb)))
+            .bindTooltip(tipHtml, { sticky: false, direction: 'top', className: 'det-tip' });
+        epiCluster.addLayer(m);
 
         m.on('click', function (e) {
             L.DomEvent.stopPropagation(e);
