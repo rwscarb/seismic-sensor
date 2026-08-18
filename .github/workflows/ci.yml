@@ -10,7 +10,7 @@ jobs:
     name: Deploy to Fly.io
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    needs: [test, lint]
+    needs: [test, lint, e2e]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -22,7 +22,14 @@ jobs:
           CHANGED=$(git diff --name-only HEAD~1 HEAD)
           echo "Changed files:"
           echo "$CHANGED"
-          if echo "$CHANGED" | grep -qvE '^seismic/(static|templates)/'; then
+          # Only seismic/static/ (app.js, app.css, ...) is eligible for the
+          # no-restart path. seismic/templates/ is NOT: Flask caches compiled
+          # Jinja templates in the running process, so a template change
+          # written to disk without a restart is invisible until the next
+          # restart — it silently serves stale HTML alongside fresh JS/CSS.
+          # (Bug hit in production 2026-08-18: index.html missing new script
+          # tags while app.js already referenced them.)
+          if echo "$CHANGED" | grep -qvE '^seismic/static/'; then
             echo "static_only=false" >> $GITHUB_OUTPUT
           else
             echo "static_only=true" >> $GITHUB_OUTPUT
@@ -30,7 +37,7 @@ jobs:
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
-      - name: Full deploy (Python or config changed)
+      - name: Full deploy (Python, templates, or config changed)
         if: steps.changes.outputs.static_only == 'false'
         run: flyctl deploy --remote-only
         env:
@@ -39,7 +46,7 @@ jobs:
       - name: Static-only deploy (no restart)
         if: steps.changes.outputs.static_only == 'true'
         run: |
-          tar czf - seismic/static/app.js seismic/static/app.css seismic/templates/index.html \
+          tar czf - seismic/static/app.js seismic/static/app.css \
             | flyctl ssh console -C "tar xzf - -C /app"
           echo "Static files deployed — services not restarted."
         env:
@@ -74,3 +81,23 @@ jobs:
 
       - name: Lint
         run: ruff check sensor.py --select E,F --ignore E501,F401
+
+  e2e:
+    name: Cypress integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install web-layer dependencies
+        run: pip install flask numpy
+
+      - name: Cypress run
+        uses: cypress-io/github-action@v6
+        with:
+          start: python3 scripts/e2e_server.py
+          wait-on: "http://localhost:8099/health"
+          wait-on-timeout: 30

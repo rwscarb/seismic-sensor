@@ -1,0 +1,16 @@
+{
+  "name": "seismic-sensor-e2e",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Cypress integration tests for the seismic-sensor web UI",
+  "scripts": {
+    "e2e:server": "python3 scripts/e2e_server.py",
+    "e2e:open": "cypress open",
+    "e2e:run": "cypress run",
+    "e2e": "start-server-and-test e2e:server http://localhost:8099/health e2e:run"
+  },
+  "devDependencies": {
+    "cypress": "^13.15.0",
+    "start-server-and-test": "^2.0.8"
+  }
+}
