@@ -10,6 +10,7 @@ import dataclasses
 import time
 import unittest
 from unittest.mock import MagicMock
+import numpy as np
 
 # ── Stub out torch, obspy, scipy, flask, rich before sensor.py imports them ───
 def _make_torch_stub():
@@ -85,6 +86,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from seismic.localize import haversine_km, p_travel_time_s, locate_epicenter, station_coords
 from seismic.config import fmt_mag
 from seismic.state import SensorState, DetectionSnap, MAX_DETECTIONS
+from seismic.model import normalize_window
 
 # Build a 'sensor' namespace so test bodies need no changes
 import types as _types
@@ -96,7 +98,55 @@ sensor = _types.SimpleNamespace(
     fmt_mag=fmt_mag,
     SensorState=SensorState,
     DetectionSnap=DetectionSnap,
+    normalize_window=normalize_window,
 )
+
+
+def _pulse_window(onset_idx, n=100, amp=20.0, seed=0):
+    """A 3-channel window of unit noise with a decaying sinusoid pulse on
+    channel 0 starting at onset_idx — a stand-in for a P-wave arrival."""
+    rng = np.random.default_rng(seed)
+    w = rng.normal(0, 1.0, (3, n)).astype(np.float32)
+    if onset_idx < n:
+        t = np.arange(n - onset_idx)
+        w[0, onset_idx:] += amp * np.exp(-t / 15.0) * np.sin(t / 2.0)
+    return w
+
+
+class TestNormalizeWindow(unittest.TestCase):
+    """The window is a causal buffer sliding forward while the onset stays
+    put, so onset position ranges from the tail (just arrived) to the head
+    (aged, about to fall out of the buffer). Normalization must not
+    self-suppress the signal regardless of which half it currently sits in.
+    """
+
+    def test_no_nan_or_inf_for_any_onset_position(self):
+        for onset_idx in range(0, 100, 10):
+            w = sensor.normalize_window(_pulse_window(onset_idx))
+            self.assertFalse(np.isnan(w).any())
+            self.assertFalse(np.isinf(w).any())
+
+    def test_clipped_to_30_std(self):
+        w = sensor.normalize_window(_pulse_window(50, amp=1000.0))
+        self.assertLessEqual(np.abs(w).max(), 30.0)
+
+    def test_onset_survives_regardless_of_aging_into_first_half(self):
+        # Signal peak after normalization should stay clearly above noise
+        # (~1.0 std) whether the onset is fresh (second half) or has aged
+        # into the first half of the window.
+        for onset_idx in (90, 70, 50, 30, 10, 0):
+            w = sensor.normalize_window(_pulse_window(onset_idx))
+            self.assertGreater(
+                np.abs(w[0]).max(), 5.0,
+                f'onset at idx {onset_idx} was suppressed by normalization',
+            )
+
+    def test_quiet_window_stays_near_unit_std(self):
+        rng = np.random.default_rng(1)
+        w = rng.normal(0, 1.0, (3, 100)).astype(np.float32)
+        out = sensor.normalize_window(w)
+        for i in range(3):
+            self.assertAlmostEqual(float(out[i].std()), 1.0, delta=0.3)
 
 
 class TestHaversine(unittest.TestCase):
