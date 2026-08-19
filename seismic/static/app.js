@@ -1671,7 +1671,14 @@ function _updateBody(d) {
         sumEl.textContent = 'Last: ' + mbStr + ' · ' + (age === '—' ? 'future?' : age) + ' ago';
     }
 
-    _replayRange.max = Math.max(0, filteredDets.length - 1);
+    // Index space here must match what _replayStart/_previewReplayAt actually
+    // index into — _sortedReplayDets(filteredDets), not filteredDets itself.
+    // That helper drops teleseismic/no-location dets and re-sorts by time,
+    // so using filteredDets.length as "max" let the slider pick indices past
+    // the end of the real playback array, silently clamping start==end and
+    // replaying just one detection. (Bug hit 2026-08-19: narrowing the range
+    // made replay stop after the first fly-to.)
+    _replayRange.max = Math.max(0, _sortedReplayDets(filteredDets).length - 1);
     if (!_replayActive) {
         if (!_replayRangeTouched) {
             // Default / still untouched: track the full available range.
