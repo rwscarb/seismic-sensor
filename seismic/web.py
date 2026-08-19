@@ -33,7 +33,7 @@ def start_web_server():
         print("flask not installed — web UI disabled (pip install flask)", flush=True)
         return
 
-    coords_json = json.dumps({k: list(v) for k, v in station_coords.items()})
+    coords_json = json.dumps({k: list(v) for k, v in list(station_coords.items())})
     sta_list = ', '.join(f"{n}.{s}" for n, s in STATIONS)
     cfg_text = f"threshold {THRESHOLD} | {N_CONSENSUS}/{len(ALL_STATIONS)} consensus | {CONSENSUS_WINDOW:.0f}s window"
     app_title = f"{sta_list} | fra"
@@ -75,7 +75,7 @@ def start_web_server():
     @app.route('/')
     def index():
         state_data = sensor_state.to_dict()
-        state_data['station_coords'] = {k: list(v) for k, v in station_coords.items()}
+        state_data['station_coords'] = {k: list(v) for k, v in list(station_coords.items())}
         try:
             from seismic.collector import collection_stats  # noqa: PLC0415
             state_data['training'] = collection_stats()
@@ -113,7 +113,7 @@ def start_web_server():
     @app.route('/api/state')
     def state():
         data = sensor_state.to_dict()
-        data['station_coords'] = {k: list(v) for k, v in station_coords.items()}
+        data['station_coords'] = {k: list(v) for k, v in list(station_coords.items())}
         try:
             from seismic.collector import collection_stats  # noqa: PLC0415
             data['training'] = collection_stats()

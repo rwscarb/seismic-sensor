@@ -39,7 +39,9 @@ def _expected_p_arrival(event_lat, event_lon, event_unix):
     """Return the earliest expected P-wave arrival time (unix) across all stations
     with known coordinates.  Falls back to event_unix + 600s if no coords yet."""
     arrivals = []
-    for key, (sta_lat, sta_lon) in station_coords.items():
+    # Snapshot first — station_coords is populated by a background thread
+    # during startup, same race as backfill.py's identical loop.
+    for key, (sta_lat, sta_lon) in list(station_coords.items()):
         dist_km = haversine_km(event_lat, event_lon, sta_lat, sta_lon)
         arrivals.append(event_unix + p_travel_time_s(dist_km))
     return min(arrivals) if arrivals else event_unix + 600.0

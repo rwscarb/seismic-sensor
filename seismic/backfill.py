@@ -137,7 +137,12 @@ def evaluate_event(event_lat: float, event_lon: float, origin_unix: float,
     fired_stations = []
     fired_times   = []
 
-    for key, (sta_lat, sta_lon) in station_coords.items():
+    # Snapshot before iterating — station_coords is populated by a
+    # background thread during startup (one FDSN fetch per station, can
+    # take 1-2 minutes), and a backfill request landing mid-fetch would
+    # otherwise hit "dictionary changed size during iteration" (reproduced
+    # 2026-08-19 by restarting the app and immediately calling /api/backfill).
+    for key, (sta_lat, sta_lon) in list(station_coords.items()):
         net, sta = key.split('.', 1)
         dist_km  = haversine_km(event_lat, event_lon, sta_lat, sta_lon)
         p_travel = p_travel_time_s(dist_km)
