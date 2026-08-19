@@ -60,7 +60,13 @@ PER_STATION_COOLDOWN = float(os.environ.get('PER_STATION_COOLDOWN', '120.0'))  #
 CONF_HISTORY_DEPTH = int(os.environ.get('CONF_HISTORY_DEPTH', '120'))  # samples of conf history kept per station
 NOISE_PERSIST_S = float(os.environ.get('NOISE_PERSIST_S', '45.0'))  # exclude station from consensus if above threshold continuously this long
 N_CONSENSUS = int(os.environ.get('N_CONSENSUS', '2'))           # 2 = appropriate for sparse 5-station network
-CONSENSUS_WINDOW = float(os.environ.get('CONSENSUS_WINDOW', '90.0'))  # widened from 60→90s for cross-continental P delays
+# Widened 60→240s 2026-08-19 after backfilling 4 real M5.5-6.9 events that
+# should have fired but didn't: the gap between two confirming stations'
+# peak-confidence times (not just their P-arrivals) was 98-208s in every
+# one, well past any prior value here. This default had already drifted
+# out of sync with the deployed fly.toml (which stayed at 60 through an
+# earlier 60->90 code-default bump) — check both stay in sync going forward.
+CONSENSUS_WINDOW = float(os.environ.get('CONSENSUS_WINDOW', '240.0'))
 MIN_LOGIT_GAP = float(os.environ.get('MIN_LOGIT_GAP', '0.0'))  # 0.0 = disabled until we have empirical baseline from real events
 STALTA_ON = os.environ.get('STALTA_ON', '1').lower() not in ('0', 'false', 'no')  # STA/LTA pre-filter
 STALTA_SHORT_S = float(os.environ.get('STALTA_SHORT_S', '0.5'))   # STA window (s)
