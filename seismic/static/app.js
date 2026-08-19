@@ -212,7 +212,25 @@ function _unpinMarker() {
     }
 }
 
-map.on('click', _unpinMarker);
+function _deselectDetection() {
+    // selectedDetTs gets set whenever a new detection auto-flies in, or a
+    // marker/row gets clicked, but nothing ever cleared it back to null —
+    // applyMarkerSelection() dims every OTHER marker whenever anything is
+    // selected (dimmed = !!selectedDetTs), so that fade became permanent
+    // for the rest of the session once anything had ever been selected,
+    // regardless of whether the user had since zoomed/panned away to look
+    // at something else entirely. Clicking empty map space should reset
+    // this the same way it already resets the pinned tooltip.
+    if (selectedDetTs === null) { return; }
+    selectedDetTs = null;
+    applyRowSelection();
+    applyMarkerSelection();
+}
+
+map.on('click', function () {
+    _unpinMarker();
+    _deselectDetection();
+});
 
 
 // ── Event log ─────────────────────────────────────────────────────────────────
