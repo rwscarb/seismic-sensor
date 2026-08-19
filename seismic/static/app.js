@@ -3,7 +3,7 @@
 const CONFIG = window.SEISMIC_CONFIG;
 const SETTINGS_KEY = 'seismic_settings';
 // FAULT_GEOJSON_URL replaced with USGS WMS tile service (see fault toggle handler)
-const REPLAY_DWELL_MS = 2500;
+const REPLAY_DWELL_MS = 4000;
 const FLY_DURATION = 1.0;
 
 
@@ -166,16 +166,40 @@ let _pulseIv = null, _pulsePhase = 0, _pulseTs = null;
 let _lastDets = [];
 let _pinnedMarker = null;
 
+// True when the currently pinned marker was pulled out of epiCluster to
+// force it visible — a marker still inside a collapsed cluster has no _map
+// and openTooltip() silently no-ops on it. Popping it onto the map directly
+// (instead of zooming to un-cluster it) shows marker + tooltip without
+// changing the current view.
+let _pinnedPopped = false;
+
 function _pinMarker(m) {
-    if (_pinnedMarker && _pinnedMarker !== m) { _pinnedMarker.closeTooltip(); }
+    // Idempotent: flyToEpi and replay's step() both pin on the same
+    // 'moveend' event, so a repeat call must not re-derive _pinnedPopped
+    // from the now-already-popped state (it would read map.hasLayer(m) as
+    // true and wrongly conclude nothing needs restoring to epiCluster).
+    if (_pinnedMarker === m) { m.openTooltip(); return; }
+    if (_pinnedMarker) { _unpinMarker(); }
     _pinnedMarker = m;
+    if (epiCluster.hasLayer(m) && !map.hasLayer(m)) {
+        epiCluster.removeLayer(m);
+        m.addTo(map);
+        _pinnedPopped = true;
+    } else {
+        _pinnedPopped = false;
+    }
     m.openTooltip();
 }
 
 function _unpinMarker() {
     if (_pinnedMarker) {
         _pinnedMarker.closeTooltip();
+        if (_pinnedPopped) {
+            map.removeLayer(_pinnedMarker);
+            epiCluster.addLayer(_pinnedMarker);
+        }
         _pinnedMarker = null;
+        _pinnedPopped = false;
     }
 }
 
@@ -783,7 +807,7 @@ function applyRowSelection() {
     });
 }
 
-function flyToEpi(lat, lon, ts) {
+function flyToEpi(lat, lon, ts, targetZoom) {
     _unpinMarker();
     selectedDetTs = ts || null;
 
@@ -811,7 +835,7 @@ function flyToEpi(lat, lon, ts) {
     // selection doesn't visibly fly across the screen during the pan.
     if (_pulseIv) { clearInterval(_pulseIv); _pulseIv = null; _pulseTs = null; }
     _mapFlying = true;
-    map.flyTo([lat, lon], map.getZoom(), { duration: FLY_DURATION, easeLinearity: 0.5 });
+    map.flyTo([lat, lon], targetZoom != null ? targetZoom : map.getZoom(), { duration: FLY_DURATION, easeLinearity: 0.5 });
     map.once('moveend', function () {
         _mapFlying = false;
         applyMarkerSelection();
@@ -1003,6 +1027,17 @@ function showDesktopNotification(det) {
 let _replayActive = false;
 let _replayInterval = null;
 
+// Close-in view used to auto-zoom on each detection during replay — unless
+// the user manually zooms mid-replay, in which case we back off and stop
+// fighting them for the rest of that run (reset each time replay restarts).
+const REPLAY_ZOOM = 7;
+let _replayAutoZoomOverridden = false;
+let _replayZoomAnimating = false;
+
+map.on('zoomstart', function () {
+    if (_replayActive && !_replayZoomAnimating) { _replayAutoZoomOverridden = true; }
+});
+
 const _mbPendingNotify = new Set();
 
 function _replayStop() {
@@ -1065,6 +1100,7 @@ function _replayStart(dets) {
     const hi = Math.min(Math.max(_replayRange.start, _replayRange.end), sorted.length - 1);
 
     _replayActive = true;
+    _replayAutoZoomOverridden = false;
     let idx = lo;
 
     const btn = document.getElementById('replay-btn');
@@ -1079,30 +1115,18 @@ function _replayStart(dets) {
         const la  = det.usgs && det.usgs.lat != null ? det.usgs.lat  : det.epicenter[0];
         const lo2 = det.usgs && det.usgs.lon != null ? det.usgs.lon  : det.epicenter[1];
 
-        flyToEpi(la, lo2, det.ts);
+        _replayZoomAnimating = !_replayAutoZoomOverridden;
+        flyToEpi(la, lo2, det.ts, _replayAutoZoomOverridden ? undefined : REPLAY_ZOOM);
 
         map.once('moveend', function () {
+            _replayZoomAnimating = false;
             if (!_replayActive) { return; }
-
-            function dwellThenAdvance() {
-                _replayInterval = setTimeout(function () {
-                    _unpinMarker();
-                    step();
-                }, REPLAY_DWELL_MS);
-            }
-
             const entry = detMarkers.find(function (x) { return x.ts === det.ts; });
-            if (!entry) { dwellThenAdvance(); return; }
-
-            // A marker still inside a collapsed cluster has no _map and
-            // openTooltip() silently no-ops on it — zoomToShowLayer reveals
-            // it first (zooming/panning only if actually needed) so the
-            // tooltip can display during replay, not just fly-to-and-nothing.
-            epiCluster.zoomToShowLayer(entry.m, function () {
-                if (!_replayActive) { return; }
-                _pinMarker(entry.m);
-                dwellThenAdvance();
-            });
+            if (entry) { _pinMarker(entry.m); }
+            _replayInterval = setTimeout(function () {
+                _unpinMarker();
+                step();
+            }, REPLAY_DWELL_MS);
         });
     }
 

@@ -116,13 +116,27 @@ All parameters are set via environment variables (see `fly.toml` and `.env.examp
 | `IRIS_STATIONS` | `IU.COR,...` | Comma-separated station list for secondary server |
 | `CHANNELS` | `HHZ,HHN,HHE` | Seismic channels |
 | `THRESHOLD` | `0.835` | Detection confidence threshold |
-| `N_CONSENSUS` | `4` | Stations required to confirm a detection |
+| `N_CONSENSUS` | `2` | Stations required to confirm a detection (2 is appropriate for this sparse 10-station network) |
 | `CONSENSUS_WINDOW` | `60` | Seconds within which consensus must occur |
 | `N_SEEDS` | `3` | Ensemble size |
 | `STALTA_ON` | `1` | Enable STA/LTA pre-filter (blocks low-energy noise) |
 | `STALTA_SHORT_S` | `0.5` | STA window length (seconds) |
 | `STALTA_LONG_S` | `10.0` | LTA window length (seconds) |
 | `STALTA_THRESH` | `2.5` | Minimum STA/LTA ratio to pass to consensus |
+
+## Tests
+
+```bash
+# Python (detection/consensus logic)
+pytest tests/ -v
+
+# Cypress E2E (web dashboard — map, replay slider, tooltips)
+npm install
+npm run e2e             # headless: boots the Flask web layer + runs Cypress
+npm run e2e:open        # interactive Cypress runner
+```
+
+The E2E suite boots only the web layer (`scripts/e2e_server.py` — no torch/seedlink needed) and exists specifically to catch template/static desyncs: a 2026-08-18 incident shipped stale `index.html` alongside fresh `app.js` because Flask caches compiled templates and doesn't reload them without a process restart. CI runs both suites (`test`, `e2e` jobs) before every deploy.
 
 ## License
 
