@@ -616,6 +616,44 @@ def start_web_server():
         result = evaluate_event(lat, lon, origin_unix, _ensemble_models, label)
         return jsonify(result)
 
+    @app.route('/api/station_log')
+    def api_station_log():
+        """Persisted per-station confidence readings for a time range — for
+        diagnosing a missed detection after the fact. Fly's own log buffer
+        only retains a couple minutes; this survives restarts and lasts
+        STATION_LOG_RETENTION_DAYS (default 3).
+
+        Query params:
+          start    (unix or ISO UTC, required)
+          end      (unix or ISO UTC, default start + 3600)
+          station  (optional, e.g. GE.APE — filters to one station)
+        """
+        from seismic.station_log import read_range
+
+        def _parse_time(raw):
+            try:
+                return float(raw)
+            except ValueError:
+                from datetime import datetime, timezone
+                return datetime.strptime(
+                    raw.replace('Z', '+00:00'), '%Y-%m-%dT%H:%M:%S%z'
+                ).replace(tzinfo=timezone.utc).timestamp()
+
+        start_raw = request.args.get('start', '')
+        if not start_raw:
+            return jsonify({'error': 'missing ?start='}), 400
+        try:
+            start = _parse_time(start_raw)
+            end = _parse_time(request.args['end']) if 'end' in request.args else start + 3600
+        except ValueError as e:
+            return jsonify({'error': f'bad time: {e}'}), 400
+
+        station = request.args.get('station', '')
+        rows = read_range(start, end)
+        if station:
+            rows = [r for r in rows if r['station'] == station]
+        return jsonify({'start': start, 'end': end, 'count': len(rows), 'rows': rows})
+
     t = threading.Thread(
         target=lambda: app.run(host='0.0.0.0', port=WEB_PORT, threaded=True),
         daemon=True,

@@ -89,6 +89,14 @@ MAPBOX_TOKEN = os.environ.get('MAPBOX_TOKEN', '')                     # optional
 BTCVM_LEDGER_PATH = os.environ.get('BTCVM_LEDGER_PATH', '/data/btcvm_ledger.jsonl')
 BTCVM_BROADCAST = os.environ.get('BTCVM_BROADCAST', '').lower() in ('1', 'true', 'yes')
 BTC_WIF = os.environ.get('BTC_WIF', '')                               # WIF key for optional OP_RETURN broadcast
+# Persisted per-station confidence log, for diagnosing a missed detection
+# after the fact — Fly's log buffer only retains a couple minutes, nowhere
+# near enough (incident 2026-08-19: a missed M5.5 near Ruteng, Indonesia
+# was already impossible to investigate at the station-score level 23
+# minutes after the fact). Compact TSV, daily files, small retention —
+# the /data volume is only 1GB and this is a genuinely high-volume log.
+STATION_LOG_DIR = os.environ.get('STATION_LOG_DIR', '/data/station_log')
+STATION_LOG_RETENTION_DAYS = int(os.environ.get('STATION_LOG_RETENTION_DAYS', '3'))
 
 # Register secrets for log scrubbing (must come after all secrets are read)
 _SCRUB_VALS.extend([v for v in [SLACK_WEBHOOK_URL, SLACK_SIGNING_SECRET, BTC_WIF] if v])

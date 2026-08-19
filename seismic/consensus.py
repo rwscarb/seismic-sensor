@@ -14,6 +14,7 @@ from seismic.localize import locate_epicenter, station_coords
 from seismic.model import refine_picks_phasenet
 from seismic.runtime import get_threshold
 from seismic.state import sensor_state, DetectionSnap
+from seismic.station_log import log_station_reading
 
 
 SUPPRESSED_REPORT_INTERVAL = 60.0
@@ -239,10 +240,18 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now, stalta_ratio=0.0):
     # (strong transient energy), rescue the detection with a lower threshold.
     large_event_rescue = stalta_ratio >= STALTA_LARGE_THRESH
     effective_threshold = THRESHOLD_LARGE if large_event_rescue else get_threshold()
+    rescue_tag = ''
     if large_event_rescue and conf >= THRESHOLD_LARGE:
         _cs.rescued_at[key] = now
+        rescue_tag = 'rescue+'
         print(f"[{ts}] {key:<8}  LARGE-EVENT RESCUE  conf={conf:.3f}  "
               f"stalta={stalta_ratio:.1f}  (threshold lowered to {THRESHOLD_LARGE})", flush=True)
+
+    # Every inference gets a persisted row regardless of print throttling
+    # below — the printed lines are rate-limited for terminal readability,
+    # but the diagnostic log needs the full, untruncated per-second record.
+    def _log(status):
+        log_station_reading(now, key, conf, mag_est, rescue_tag + status, logit_gap, stalta_ratio)
 
     # ── Below threshold ──────────────────────────────────────────────────────
     if conf < effective_threshold:
@@ -258,6 +267,7 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now, stalta_ratio=0.0):
             else:
                 print(f"[{ts}] {key:<8}  conf={conf:.3f}  mag={fmt_mag(mag_est):<5}", flush=True)
             station_status[key] = now
+        _log('suppressed' if mag_est > MAG_MAX_CREDIBLE else '')
         return
 
     # ── Above threshold — check for noise / flatline ─────────────────────────
@@ -271,6 +281,7 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now, stalta_ratio=0.0):
                   f"— excluded from consensus", flush=True)
             station_status[key] = now
         sensor_state.update_station(key, conf, mag_est)
+        _log('noisy')
         return
 
     if sensor_state.is_flatline(key):
@@ -279,6 +290,7 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now, stalta_ratio=0.0):
                   flush=True)
             station_status[key] = now
         sensor_state.update_station(key, conf, mag_est)
+        _log('flatline')
         return
 
     # ── Record P-arrival and check consensus ─────────────────────────────────
@@ -292,6 +304,7 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now, stalta_ratio=0.0):
         waiting = N_CONSENSUS - len(stations_fired)
         print(f"  [{ts}] {key} CANDIDATE conf={conf:.3f} mag={fmt_mag(mag_est)} "
               f"(waiting for {waiting} more station(s))", flush=True)
+        _log('candidate')
         return
 
     # ── Gate checks before firing ─────────────────────────────────────────────
@@ -304,6 +317,7 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now, stalta_ratio=0.0):
         print(f"  [{ts}] consensus met but gated: "
               f"cooldown_ok={cooldown_ok} gap_ok={gap_ok} (gap={mean_gap:.2f} "
               f"min={MIN_LOGIT_GAP}) all_cooled={all_cooled}", flush=True)
+        _log('gated')
         return
 
     # ── Second-stage classifier veto ─────────────────────────────────────────
@@ -317,6 +331,7 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now, stalta_ratio=0.0):
         clf_prob, clf_suppress = _clf.score(stations_fired, station_rings, CHANNELS, WIN_SAMPLES)
         if clf_suppress:
             print(f"  [{ts}] VETOED by classifier (prob={clf_prob:.3f})", flush=True)
+            _log('vetoed')
             return
         if clf_prob is not None:
             print(f"  [{ts}] classifier OK (prob={clf_prob:.3f})", flush=True)
@@ -327,4 +342,5 @@ def on_inference(net, sta, conf, mag_est, logit_gap, now, stalta_ratio=0.0):
         _cs.sta_last_alert[k] = now
 
     _cs.recent.clear()
+    _log('fired')
     _fire_detection(now, ts, conf, logit_gap, stations_fired, mean_gap)
