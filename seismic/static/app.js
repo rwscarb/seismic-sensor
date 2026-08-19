@@ -1515,6 +1515,10 @@ function _renderDetections(dets, filteredDets, serverStart) {
         dDiv.innerHTML = '<div class="no-data">' + t('det_none') + '</div>';
         return;
     }
+    if (!filteredDets.length) {
+        dDiv.innerHTML = '<div class="no-data">' + t('det_none_filtered') + '</div>';
+        return;
+    }
 
     const deployLabel = (function () {
         const dt = new Date(serverStart * 1000);
