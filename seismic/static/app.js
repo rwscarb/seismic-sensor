@@ -1013,34 +1013,45 @@ function _replayStop() {
     if (btn) { btn.textContent = '▶ replay'; }
 }
 
+// Once the user drags either handle, stop auto-expanding the range to
+// "everything" on each data refresh — respect their chosen window instead.
+let _replayRangeTouched = false;
+
+function _sortedReplayDets(dets) {
+    return [...dets]
+        .filter(function (d) { return !d.teleseismic && (d.epicenter || (d.usgs && d.usgs.lat != null)); })
+        .sort(function (a, b) { return a.unix_ts - b.unix_ts; });
+}
+
 function _replayStart(dets) {
     if (!dets || !dets.length) { return; }
     _replayStop();
 
-    const sorted = [...dets]
-        .filter(function (d) { return !d.teleseismic && (d.epicenter || (d.usgs && d.usgs.lat != null)); })
-        .sort(function (a, b) { return a.unix_ts - b.unix_ts; });
+    const sorted = _sortedReplayDets(dets);
     if (!sorted.length) { return; }
 
+    const startEl = document.getElementById('replay-start');
+    const endEl   = document.getElementById('replay-end');
+    const startIdx = startEl ? Math.min(parseInt(startEl.value, 10) || 0, sorted.length - 1) : 0;
+    const endIdx   = endEl   ? Math.min(parseInt(endEl.value, 10) || 0,   sorted.length - 1) : sorted.length - 1;
+    const lo = Math.min(startIdx, endIdx);
+    const hi = Math.max(startIdx, endIdx);
+
     _replayActive = true;
-    let idx = 0;
+    let idx = lo;
 
     const btn = document.getElementById('replay-btn');
     if (btn) { btn.textContent = '⏹ stop'; }
 
-    const scrub = document.getElementById('replay-scrub');
-    if (scrub) { scrub.max = Math.max(0, sorted.length - 1); }
-
     function step() {
         if (!_replayActive) { return; }
-        if (idx >= sorted.length) { _replayStop(); return; }
+        if (idx > hi) { _replayStop(); return; }
 
         const det = sorted[idx++];
         const la  = det.usgs && det.usgs.lat != null ? det.usgs.lat  : det.epicenter[0];
-        const lo  = det.usgs && det.usgs.lon != null ? det.usgs.lon  : det.epicenter[1];
+        const lo2 = det.usgs && det.usgs.lon != null ? det.usgs.lon  : det.epicenter[1];
 
-        if (scrub) { scrub.value = idx - 1; scrub.title = det.ts; }
-        flyToEpi(la, lo, det.ts);
+        flyToEpi(la, lo2, det.ts);
 
         map.once('moveend', function () {
             if (!_replayActive) { return; }
@@ -1064,23 +1075,42 @@ function _initReplayControls() {
         });
     }
 
-    const scrub = document.getElementById('replay-scrub');
-    if (scrub) {
-        scrub.addEventListener('input', function () {
-            const sorted = [..._currentFilteredDets].sort(function (a, b) { return a.unix_ts - b.unix_ts; });
-            const det = sorted[parseInt(scrub.value, 10)];
-            if (!det) { return; }
-            selectedDetTs = det.ts;
-            applyRowSelection();
-            const row = document.querySelector('.det[data-ts="' + CSS.escape(det.ts) + '"]');
-            if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
-            if (det.epicenter || (det.usgs && det.usgs.lat != null)) {
-                const la = det.usgs && det.usgs.lat != null ? det.usgs.lat : det.epicenter[0];
-                const lo = det.usgs && det.usgs.lon != null ? det.usgs.lon : det.epicenter[1];
-                _mapFlying = true;
-                map.flyTo([la, lo], map.getZoom(), { duration: 0.6, easeLinearity: 0.5 });
-                map.once('moveend', function () { _mapFlying = false; applyMarkerSelection(); });
+    const startEl = document.getElementById('replay-start');
+    const endEl   = document.getElementById('replay-end');
+
+    function previewAt(idx) {
+        const sorted = _sortedReplayDets(_currentFilteredDets);
+        const det = sorted[idx];
+        if (!det) { return; }
+        selectedDetTs = det.ts;
+        applyRowSelection();
+        const row = document.querySelector('.det[data-ts="' + CSS.escape(det.ts) + '"]');
+        if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+        if (det.epicenter || (det.usgs && det.usgs.lat != null)) {
+            const la = det.usgs && det.usgs.lat != null ? det.usgs.lat : det.epicenter[0];
+            const lo = det.usgs && det.usgs.lon != null ? det.usgs.lon : det.epicenter[1];
+            _mapFlying = true;
+            map.flyTo([la, lo], map.getZoom(), { duration: 0.6, easeLinearity: 0.5 });
+            map.once('moveend', function () { _mapFlying = false; applyMarkerSelection(); });
+        }
+    }
+
+    if (startEl) {
+        startEl.addEventListener('input', function () {
+            _replayRangeTouched = true;
+            if (endEl && parseInt(startEl.value, 10) > parseInt(endEl.value, 10)) {
+                startEl.value = endEl.value;
             }
+            previewAt(parseInt(startEl.value, 10));
+        });
+    }
+    if (endEl) {
+        endEl.addEventListener('input', function () {
+            _replayRangeTouched = true;
+            if (startEl && parseInt(endEl.value, 10) < parseInt(startEl.value, 10)) {
+                endEl.value = startEl.value;
+            }
+            previewAt(parseInt(endEl.value, 10));
         });
     }
 }
@@ -1606,10 +1636,24 @@ function _updateBody(d) {
         sumEl.textContent = 'Last: ' + mbStr + ' · ' + (age === '—' ? 'future?' : age) + ' ago';
     }
 
-    const scrub = document.getElementById('replay-scrub');
-    if (scrub) {
-        scrub.max = Math.max(0, filteredDets.length - 1);
-        if (!_replayActive) { scrub.value = scrub.max; }
+    const startEl = document.getElementById('replay-start');
+    const endEl   = document.getElementById('replay-end');
+    if (startEl && endEl) {
+        const newMax = Math.max(0, filteredDets.length - 1);
+        startEl.max = newMax;
+        endEl.max = newMax;
+        if (!_replayActive) {
+            if (!_replayRangeTouched) {
+                // Default / still untouched: track the full available range.
+                startEl.value = 0;
+                endEl.value = newMax;
+            } else {
+                // User picked a sub-range — keep it, just clamp to the
+                // (possibly still growing) available range.
+                startEl.value = Math.min(parseInt(startEl.value, 10) || 0, newMax);
+                endEl.value = Math.min(parseInt(endEl.value, 10) || 0, newMax);
+            }
+        }
     }
     _updateReplayTicks(filteredDets);
     _renderDetections(dets, filteredDets, d.server_start || 0);
