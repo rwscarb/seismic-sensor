@@ -1,3 +1,4 @@
+import calendar
 import json
 import os
 import time
@@ -111,6 +112,24 @@ def send_slack_alert(ts, stations_fired, conf, epicenter=None, mag_est=None):
         print(f"  [slack] webhook failed: {e}", flush=True)
 
 
+def _parse_emsc_time(raw):
+    """EMSC/seismicportal.eu returns 'time' as an ISO8601 UTC string, e.g.
+    '2026-08-19T10:26:59.0Z' — unlike USGS, which uses epoch millis. Treating
+    it as epoch millis (isinstance int/float check failing silently) made
+    every EMSC candidate's origin time fall back to 0 (1970), which dominates
+    _score_catalog_event's residual and makes match selection effectively
+    random — root cause of detections getting "confirmed" against catalog
+    events thousands of km away (bug found 2026-08-19)."""
+    if isinstance(raw, (int, float)):
+        return raw / 1000
+    if isinstance(raw, str):
+        try:
+            return calendar.timegm(time.strptime(raw.split('.')[0].rstrip('Z'), '%Y-%m-%dT%H:%M:%S'))
+        except ValueError:
+            return 0
+    return 0
+
+
 def query_emsc_event(det_unix, p_arrivals):
     """
     EMSC fallback: European-Mediterranean catalog, lower magnitude threshold.
@@ -135,8 +154,7 @@ def query_emsc_event(det_unix, p_arrivals):
 
         def score(feat):
             c = feat['geometry']['coordinates']
-            origin = feat['properties'].get('time')
-            origin_unix = origin / 1000 if isinstance(origin, (int, float)) else 0
+            origin_unix = _parse_emsc_time(feat['properties'].get('time'))
             return _score_catalog_event(c[1], c[0], origin_unix, p_arrivals)
 
         f = min(feats, key=score)
@@ -146,7 +164,7 @@ def query_emsc_event(det_unix, p_arrivals):
             'mag': p.get('mag') or p.get('magnitude'),
             'magType': p.get('magtype') or p.get('magnitudetype', '?'),
             'place': p.get('flynn_region') or p.get('region', '?'),
-            'time': p['time'] / 1000 if isinstance(p.get('time'), (int, float)) else 0,
+            'time': _parse_emsc_time(p.get('time')),
             'lat': coords[1],
             'lon': coords[0],
             'depth': coords[2] if len(coords) > 2 else 0,
