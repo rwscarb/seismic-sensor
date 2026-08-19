@@ -1011,6 +1011,16 @@ function _replayStop() {
     _unpinMarker();
     const btn = document.getElementById('replay-btn');
     if (btn) { btn.textContent = '▶ replay'; }
+    const cursor = document.getElementById('replay-cursor');
+    if (cursor) { cursor.style.display = 'none'; }
+}
+
+function _positionReplayCursor(idx) {
+    const cursor = document.getElementById('replay-cursor');
+    if (!cursor) { return; }
+    const max = Math.max(1, _replayRange.max);
+    cursor.style.left = (idx / max * 100) + '%';
+    cursor.style.display = 'block';
 }
 
 // Range state lives here, not on native <input> elements — the two-
@@ -1064,6 +1074,7 @@ function _replayStart(dets) {
         if (!_replayActive) { return; }
         if (idx > hi) { _replayStop(); return; }
 
+        _positionReplayCursor(idx);
         const det = sorted[idx++];
         const la  = det.usgs && det.usgs.lat != null ? det.usgs.lat  : det.epicenter[0];
         const lo2 = det.usgs && det.usgs.lon != null ? det.usgs.lon  : det.epicenter[1];
@@ -1072,12 +1083,26 @@ function _replayStart(dets) {
 
         map.once('moveend', function () {
             if (!_replayActive) { return; }
+
+            function dwellThenAdvance() {
+                _replayInterval = setTimeout(function () {
+                    _unpinMarker();
+                    step();
+                }, REPLAY_DWELL_MS);
+            }
+
             const entry = detMarkers.find(function (x) { return x.ts === det.ts; });
-            if (entry) { _pinMarker(entry.m); }
-            _replayInterval = setTimeout(function () {
-                _unpinMarker();
-                step();
-            }, REPLAY_DWELL_MS);
+            if (!entry) { dwellThenAdvance(); return; }
+
+            // A marker still inside a collapsed cluster has no _map and
+            // openTooltip() silently no-ops on it — zoomToShowLayer reveals
+            // it first (zooming/panning only if actually needed) so the
+            // tooltip can display during replay, not just fly-to-and-nothing.
+            epiCluster.zoomToShowLayer(entry.m, function () {
+                if (!_replayActive) { return; }
+                _pinMarker(entry.m);
+                dwellThenAdvance();
+            });
         });
     }
 
