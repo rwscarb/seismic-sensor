@@ -146,12 +146,21 @@ const epiCluster = L.markerClusterGroup({
         const maxMb = markers.reduce(function (m, mk) {
             return Math.max(m, mk._detMb || 0);
         }, 0);
-        const color = _magColor(maxMb);
+        // Same validated sequential hue as individual markers, just varying
+        // lightness/opacity across the disc instead of a flat fill — still
+        // one hue (dataviz: sequential = one hue, light→dark), not a second
+        // palette. Off-center highlight reads as a glossy sphere; the inset
+        // ring is the mark-spec's "ring on overlapping marks" applied to a
+        // cluster, which *is* an aggregate of overlapping marks.
+        const rgb = _magColorRgb(maxMb).join(',');
         const n = markers.length;
         const size = Math.round(Math.min(56, 22 + Math.sqrt(n) * 8));
         return L.divIcon({
-            html: '<div style="background:' + color + ';width:100%;height:100%;'
-                + 'border-radius:50%;display:flex;align-items:center;justify-content:center;'
+            html: '<div style="width:100%;height:100%;border-radius:50%;'
+                + 'background:radial-gradient(circle at 35% 30%, rgba(' + rgb + ',0.98) 0%, '
+                + 'rgba(' + rgb + ',0.88) 55%, rgba(' + rgb + ',0.55) 100%);'
+                + 'box-shadow:0 0 8px rgba(' + rgb + ',0.55), inset 0 0 0 2px rgba(255,255,255,0.18);'
+                + 'display:flex;align-items:center;justify-content:center;'
                 + 'color:#fff;font:600 ' + Math.round(size / 2.6) + 'px system-ui,sans-serif">'
                 + n + '</div>',
             className: 'epi-cluster-icon',
@@ -744,17 +753,22 @@ function _hexToRgb(hex) {
     return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-function _magColor(mb) {
+function _magColorRgb(mb) {
     const mbVal = (mb != null) ? mb : 4;  // 0 is a real (if unlikely) magnitude, not "missing"
     const t = Math.max(0, Math.min(1, (mbVal - 2) / 5));  // M2→0, M7→1
     const idx = t * (_MAG_RAMP.length - 1);
     const lo = Math.floor(idx), hi = Math.min(_MAG_RAMP.length - 1, lo + 1);
     const frac = idx - lo;
     const a = _hexToRgb(_MAG_RAMP[lo]), b = _hexToRgb(_MAG_RAMP[hi]);
-    const r = Math.round(a[0] + (b[0] - a[0]) * frac);
-    const g = Math.round(a[1] + (b[1] - a[1]) * frac);
-    const bl = Math.round(a[2] + (b[2] - a[2]) * frac);
-    return 'rgb(' + r + ',' + g + ',' + bl + ')';
+    return [
+        Math.round(a[0] + (b[0] - a[0]) * frac),
+        Math.round(a[1] + (b[1] - a[1]) * frac),
+        Math.round(a[2] + (b[2] - a[2]) * frac),
+    ];
+}
+
+function _magColor(mb) {
+    return 'rgb(' + _magColorRgb(mb).join(',') + ')';
 }
 
 // Fill = magnitude (sequential, redundant with radius so small size deltas
