@@ -185,25 +185,12 @@ body.fs-mode #fs-overlay{display:block}
    (white box + border) so only the flat colored circle from app.js shows. */
 .epi-cluster-icon{background:transparent!important;border:none!important}
 
-/* Dual-handle replay range — two native range inputs stacked on top of each
-   other with transparent tracks; pointer-events is disabled on the track
-   and re-enabled only on the thumb, so each handle stays independently
-   draggable instead of whichever input happens to be on top eating every
-   click. A pseudo-element draws the one shared visible track line. */
-#replay-range::before{
-  content:'';position:absolute;top:7px;left:0;right:0;height:3px;
-  background:#21262d;border-radius:2px;pointer-events:none
+/* Dual-handle replay range — plain draggable divs positioned by percentage
+   (see app.js), not native range inputs. The two-overlaid-range-inputs CSS
+   trick is fiddly across browsers and silently produced invisible thumbs;
+   this is fully controlled from JS instead so it's actually verifiable. */
+.replay-thumb{
+  position:absolute;top:1px;width:12px;height:12px;border-radius:50%;
+  border:1px solid;cursor:pointer;transform:translateX(-50%);
+  box-shadow:0 1px 2px rgba(0,0,0,.5);touch-action:none
 }
-.replay-handle{
-  position:absolute;top:0;left:0;width:100%;margin:0;height:16px;
-  -webkit-appearance:none;appearance:none;background:transparent;pointer-events:none
-}
-.replay-handle::-webkit-slider-runnable-track{background:transparent;height:16px}
-.replay-handle::-webkit-slider-thumb{
-  -webkit-appearance:none;appearance:none;pointer-events:auto;
-  width:12px;height:12px;border-radius:50%;cursor:pointer;margin-top:2px
-}
-.replay-handle::-moz-range-track{background:transparent;height:16px;border:none}
-.replay-handle::-moz-range-thumb{pointer-events:auto;width:12px;height:12px;border-radius:50%;cursor:pointer;border:none}
-#replay-start::-webkit-slider-thumb,#replay-start::-moz-range-thumb{background:#6e7681;border:1px solid #30363d}
-#replay-end::-webkit-slider-thumb,#replay-end::-moz-range-thumb{background:#58a6ff;border:1px solid #3a6fa8}

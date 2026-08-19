@@ -131,9 +131,11 @@ window.SEISMIC_INITIAL_STATE={{ initial_state_json|safe }};
       </div>
     </div>
     <div id="replay-bar" style="padding:0 8px 4px;display:flex;flex-direction:column;gap:2px;border-bottom:1px solid #21262d">
-      <div id="replay-range" style="position:relative;height:16px">
-        <input type="range" id="replay-start" class="replay-handle" min="0" max="0" value="0" title="Replay start">
-        <input type="range" id="replay-end" class="replay-handle" min="0" max="0" value="0" title="Replay end">
+      <div id="replay-range" style="position:relative;height:16px;cursor:default">
+        <div id="replay-track" style="position:absolute;top:6px;left:6px;right:6px;height:3px;background:#21262d;border-radius:2px"></div>
+        <div id="replay-fill" style="position:absolute;top:6px;height:3px;background:#3a6fa8;border-radius:2px"></div>
+        <div id="replay-start-thumb" class="replay-thumb" title="Replay start" style="background:#6e7681;border-color:#30363d"></div>
+        <div id="replay-end-thumb" class="replay-thumb" title="Replay end" style="background:#58a6ff;border-color:#3a6fa8"></div>
       </div>
       <div id="replay-ticks" style="position:relative;height:6px;width:100%"></div>
     </div>

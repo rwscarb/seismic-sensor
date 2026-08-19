@@ -1013,6 +1013,11 @@ function _replayStop() {
     if (btn) { btn.textContent = '▶ replay'; }
 }
 
+// Range state lives here, not on native <input> elements — the two-
+// overlaid-range-inputs CSS trick this used to use is fiddly across
+// browsers and was silently rendering with no visible thumbs at all.
+// Plain divs positioned by percentage + pointer-event dragging instead.
+const _replayRange = { start: 0, end: 0, max: 0 };
 // Once the user drags either handle, stop auto-expanding the range to
 // "everything" on each data refresh — respect their chosen window instead.
 let _replayRangeTouched = false;
@@ -1023,6 +1028,22 @@ function _sortedReplayDets(dets) {
         .sort(function (a, b) { return a.unix_ts - b.unix_ts; });
 }
 
+function _positionReplayThumbs() {
+    const startThumb = document.getElementById('replay-start-thumb');
+    const endThumb   = document.getElementById('replay-end-thumb');
+    const fill       = document.getElementById('replay-fill');
+    if (!startThumb || !endThumb) { return; }
+    const max = Math.max(1, _replayRange.max);
+    const pStart = (_replayRange.start / max) * 100;
+    const pEnd   = (_replayRange.end / max) * 100;
+    startThumb.style.left = pStart + '%';
+    endThumb.style.left   = pEnd + '%';
+    if (fill) {
+        fill.style.left  = Math.min(pStart, pEnd) + '%';
+        fill.style.width = Math.abs(pEnd - pStart) + '%';
+    }
+}
+
 function _replayStart(dets) {
     if (!dets || !dets.length) { return; }
     _replayStop();
@@ -1030,12 +1051,8 @@ function _replayStart(dets) {
     const sorted = _sortedReplayDets(dets);
     if (!sorted.length) { return; }
 
-    const startEl = document.getElementById('replay-start');
-    const endEl   = document.getElementById('replay-end');
-    const startIdx = startEl ? Math.min(parseInt(startEl.value, 10) || 0, sorted.length - 1) : 0;
-    const endIdx   = endEl   ? Math.min(parseInt(endEl.value, 10) || 0,   sorted.length - 1) : sorted.length - 1;
-    const lo = Math.min(startIdx, endIdx);
-    const hi = Math.max(startIdx, endIdx);
+    const lo = Math.min(_replayRange.start, _replayRange.end, sorted.length - 1);
+    const hi = Math.min(Math.max(_replayRange.start, _replayRange.end), sorted.length - 1);
 
     _replayActive = true;
     let idx = lo;
@@ -1067,6 +1084,23 @@ function _replayStart(dets) {
     step();
 }
 
+function _previewReplayAt(idx) {
+    const sorted = _sortedReplayDets(_currentFilteredDets);
+    const det = sorted[idx];
+    if (!det) { return; }
+    selectedDetTs = det.ts;
+    applyRowSelection();
+    const row = document.querySelector('.det[data-ts="' + CSS.escape(det.ts) + '"]');
+    if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    if (det.epicenter || (det.usgs && det.usgs.lat != null)) {
+        const la = det.usgs && det.usgs.lat != null ? det.usgs.lat : det.epicenter[0];
+        const lo = det.usgs && det.usgs.lon != null ? det.usgs.lon : det.epicenter[1];
+        _mapFlying = true;
+        map.flyTo([la, lo], map.getZoom(), { duration: 0.6, easeLinearity: 0.5 });
+        map.once('moveend', function () { _mapFlying = false; applyMarkerSelection(); });
+    }
+}
+
 function _initReplayControls() {
     const replayBtn = document.getElementById('replay-btn');
     if (replayBtn) {
@@ -1075,44 +1109,45 @@ function _initReplayControls() {
         });
     }
 
-    const startEl = document.getElementById('replay-start');
-    const endEl   = document.getElementById('replay-end');
+    const track = document.getElementById('replay-range');
+    const startThumb = document.getElementById('replay-start-thumb');
+    const endThumb   = document.getElementById('replay-end-thumb');
+    if (!track || !startThumb || !endThumb) { return; }
 
-    function previewAt(idx) {
-        const sorted = _sortedReplayDets(_currentFilteredDets);
-        const det = sorted[idx];
-        if (!det) { return; }
-        selectedDetTs = det.ts;
-        applyRowSelection();
-        const row = document.querySelector('.det[data-ts="' + CSS.escape(det.ts) + '"]');
-        if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
-        if (det.epicenter || (det.usgs && det.usgs.lat != null)) {
-            const la = det.usgs && det.usgs.lat != null ? det.usgs.lat : det.epicenter[0];
-            const lo = det.usgs && det.usgs.lon != null ? det.usgs.lon : det.epicenter[1];
-            _mapFlying = true;
-            map.flyTo([la, lo], map.getZoom(), { duration: 0.6, easeLinearity: 0.5 });
-            map.once('moveend', function () { _mapFlying = false; applyMarkerSelection(); });
-        }
+    function idxFromClientX(clientX) {
+        const rect = track.getBoundingClientRect();
+        const frac = rect.width > 0 ? (clientX - rect.left) / rect.width : 0;
+        return Math.round(Math.max(0, Math.min(1, frac)) * _replayRange.max);
     }
 
-    if (startEl) {
-        startEl.addEventListener('input', function () {
+    function bindThumbDrag(thumb, key) {
+        thumb.addEventListener('pointerdown', function (e) {
+            e.preventDefault();
+            thumb.setPointerCapture(e.pointerId);
             _replayRangeTouched = true;
-            if (endEl && parseInt(startEl.value, 10) > parseInt(endEl.value, 10)) {
-                startEl.value = endEl.value;
+
+            function onMove(ev) {
+                const idx = idxFromClientX(ev.clientX);
+                _replayRange[key] = idx;
+                if (_replayRange.start > _replayRange.end) {
+                    // Clamp against the other handle instead of letting them cross.
+                    _replayRange[key === 'start' ? 'end' : 'start'] = idx;
+                }
+                _positionReplayThumbs();
+                _previewReplayAt(idx);
             }
-            previewAt(parseInt(startEl.value, 10));
+            function onUp(ev) {
+                thumb.releasePointerCapture(e.pointerId);
+                thumb.removeEventListener('pointermove', onMove);
+                thumb.removeEventListener('pointerup', onUp);
+            }
+            thumb.addEventListener('pointermove', onMove);
+            thumb.addEventListener('pointerup', onUp);
         });
     }
-    if (endEl) {
-        endEl.addEventListener('input', function () {
-            _replayRangeTouched = true;
-            if (startEl && parseInt(endEl.value, 10) < parseInt(startEl.value, 10)) {
-                endEl.value = startEl.value;
-            }
-            previewAt(parseInt(endEl.value, 10));
-        });
-    }
+
+    bindThumbDrag(startThumb, 'start');
+    bindThumbDrag(endThumb, 'end');
 }
 
 
@@ -1636,25 +1671,20 @@ function _updateBody(d) {
         sumEl.textContent = 'Last: ' + mbStr + ' · ' + (age === '—' ? 'future?' : age) + ' ago';
     }
 
-    const startEl = document.getElementById('replay-start');
-    const endEl   = document.getElementById('replay-end');
-    if (startEl && endEl) {
-        const newMax = Math.max(0, filteredDets.length - 1);
-        startEl.max = newMax;
-        endEl.max = newMax;
-        if (!_replayActive) {
-            if (!_replayRangeTouched) {
-                // Default / still untouched: track the full available range.
-                startEl.value = 0;
-                endEl.value = newMax;
-            } else {
-                // User picked a sub-range — keep it, just clamp to the
-                // (possibly still growing) available range.
-                startEl.value = Math.min(parseInt(startEl.value, 10) || 0, newMax);
-                endEl.value = Math.min(parseInt(endEl.value, 10) || 0, newMax);
-            }
+    _replayRange.max = Math.max(0, filteredDets.length - 1);
+    if (!_replayActive) {
+        if (!_replayRangeTouched) {
+            // Default / still untouched: track the full available range.
+            _replayRange.start = 0;
+            _replayRange.end = _replayRange.max;
+        } else {
+            // User picked a sub-range — keep it, just clamp to the
+            // (possibly still growing) available range.
+            _replayRange.start = Math.min(_replayRange.start, _replayRange.max);
+            _replayRange.end = Math.min(_replayRange.end, _replayRange.max);
         }
     }
+    _positionReplayThumbs();
     _updateReplayTicks(filteredDets);
     _renderDetections(dets, filteredDets, d.server_start || 0);
     _renderEpiMarkers(filteredDets);
