@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+<script src="{{ url_for('static', filename='i18n.js') }}"></script>
 <style>
 @keyframes _skel-pulse{0%,100%{opacity:.35}50%{opacity:.7}}
 ._skel{background:#21262d;border-radius:3px;animation:_skel-pulse 1.4s ease-in-out infinite}
@@ -34,28 +35,35 @@ window.SEISMIC_INITIAL_STATE={{ initial_state_json|safe }};
   <svg width="200" height="40" viewBox="0 0 200 40">
     <path id="wave-path" d="M0,20 L20,20 L30,4 L40,36 L50,4 L60,36 L70,20 L90,20 L100,10 L110,30 L120,20 L140,20 L150,6 L160,34 L170,20 L200,20" fill="none" stroke="#f85149" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
-  <p id="boot-msg">connecting to sensor…</p>
+  <p id="boot-msg" data-i18n="boot_connecting">connecting to sensor…</p>
 </div>
 <div id="clock-skew-banner" style="display:none;background:#5a1e02;color:#ffa657;font-size:11px;text-align:center;padding:4px 8px;border-bottom:1px solid #d29922;position:sticky;top:0;z-index:9999"></div>
 <header>
   <div id="status-dot"></div>
-  <h1>&#127757; Seismic Sensor</h1>
+  <h1>&#127757; <span data-i18n="app_title">Seismic Sensor</span></h1>
   <span id="cfg" title="SeedLink: {{ seedlink }}">{{ cfg_text }}</span>
   <span id="last-event-summary"></span>
-  <span id="last-update">connecting...</span>
+  <span id="last-update" data-i18n="status_connecting">connecting...</span>
   <div id="header-controls" style="margin-left:auto;display:flex;align-items:center;gap:4px;flex-shrink:0;flex-wrap:nowrap">
-  <button id="sat-btn" title="Toggle satellite imagery (ESRI World Imagery)" style="background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer">&#x1F6F0; sat</button>
-  <button id="faults-btn" title="Toggle active fault overlay (GEM Global Active Faults)" style="background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer">&#9889; faults</button>
-  <button id="mute-btn" title="Toggle audio alerts" style="background:#161b22;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer">&#128266; on</button>
-  <button id="notif-btn" title="Toggle desktop notifications" style="background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer">&#128276; notif</button>
-  <select id="notif-mb-sel" title="Minimum magnitude to trigger alerts" style="background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 5px;font-size:11px;cursor:pointer">
-    <option value="0">all mb</option>
+  <select id="lang-sel" title="Language" data-i18n-title="lang_label" style="background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 5px;font-size:11px;cursor:pointer">
+    <option value="en">EN</option>
+    <option value="es">ES</option>
+    <option value="fr">FR</option>
+    <option value="de">DE</option>
+    <option value="ja">JA</option>
+  </select>
+  <button id="sat-btn" title="Toggle satellite imagery (ESRI World Imagery)" data-i18n-title="btn_sat_title" style="background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer">&#x1F6F0; <span data-i18n="btn_sat">sat</span></button>
+  <button id="faults-btn" title="Toggle active fault overlay (GEM Global Active Faults)" data-i18n-title="btn_faults_title" style="background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer">&#9889; <span data-i18n="btn_faults">faults</span></button>
+  <button id="mute-btn" title="Toggle audio alerts" data-i18n-title="btn_mute_title" style="background:#161b22;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer">&#128266; <span data-i18n="btn_mute_on">on</span></button>
+  <button id="notif-btn" title="Toggle desktop notifications" data-i18n-title="btn_notif_title" style="background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer">&#128276; <span data-i18n="btn_notif">notif</span></button>
+  <select id="notif-mb-sel" title="Minimum magnitude to trigger alerts" data-i18n-title="sel_notif_mb_title" style="background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 5px;font-size:11px;cursor:pointer">
+    <option value="0" data-i18n="sel_notif_mb_all">all mb</option>
     <option value="3.5">&#8805;3.5</option>
     <option value="4.0">&#8805;4.0</option>
     <option value="4.5">&#8805;4.5</option>
     <option value="5.0">&#8805;5.0</option>
   </select>
-  <select id="tz-sel" title="Display timezone" style="background:#161b22;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:2px 5px;font-size:11px;cursor:pointer">
+  <select id="tz-sel" title="Display timezone" data-i18n-title="sel_tz_title" style="background:#161b22;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:2px 5px;font-size:11px;cursor:pointer">
     <option value="auto">Auto TZ</option>
     <option value="UTC">UTC</option>
     <option value="America/Los_Angeles">Pacific</option>
@@ -76,11 +84,11 @@ window.SEISMIC_INITIAL_STATE={{ initial_state_json|safe }};
 </header>
 <div class="grid">
   <div class="panel" id="left-panel">
-    <div class="panel-hdr" style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid #21262d"><h2 style="margin:0">Stations</h2><button id="sta-sort-btn" title="Toggle station sort order" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">A→Z</button></div>
+    <div class="panel-hdr" style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid #21262d"><h2 style="margin:0" data-i18n="nav_stations">Stations</h2><button id="sta-sort-btn" title="Toggle station sort order" data-i18n-title="sta_sort_title" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">A→Z</button></div>
     <div id="stations"><div style="padding:8px 10px;display:flex;flex-direction:column;gap:6px"><div class="_skel" style="height:44px;border-radius:4px"></div><div class="_skel" style="height:44px;border-radius:4px"></div><div class="_skel" style="height:44px;border-radius:4px"></div><div class="_skel" style="height:44px;border-radius:4px"></div></div></div>
     <div id="scoreboard-panel" style="border-top:1px solid #21262d;padding:10px 0 2px;font-size:11px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <span style="color:#6e7681;text-transform:uppercase;letter-spacing:.8px;font-size:9px">Score</span>
+        <span style="color:#6e7681;text-transform:uppercase;letter-spacing:.8px;font-size:9px" data-i18n="nav_score">Score</span>
         <div id="score-window-btns" style="display:flex;gap:2px">
           <button class="score-win-btn" data-days="1"  style="background:#0d1117;border:1px solid #58a6ff;color:#58a6ff;border-radius:3px;padding:1px 5px;font-size:9px;cursor:pointer">1d</button>
           <button class="score-win-btn" data-days="3"  style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:3px;padding:1px 5px;font-size:9px;cursor:pointer">3d</button>
@@ -92,42 +100,42 @@ window.SEISMIC_INITIAL_STATE={{ initial_state_json|safe }};
       <div id="scoreboard-content" style="color:#8b949e"><div class="_skel" style="height:28px;border-radius:3px;margin-bottom:4px"></div><div class="_skel" style="height:28px;border-radius:3px"></div></div>
     </div>
   </div>
-  <div id="sta-resize-handle" title="Drag to resize stations panel"></div>
+  <div id="sta-resize-handle" title="Drag to resize stations panel" data-i18n-title="sta_resize_title"></div>
   <div id="map-wrap">
-    <button id="fs-btn" title="Toggle fullscreen map">&#x26F6;</button>
+    <button id="fs-btn" title="Toggle fullscreen map" data-i18n-title="btn_fullscreen_title">&#x26F6;</button>
     <div id="map"></div>
     <div id="event-log"></div>
     <div id="map-legend">
-      <div><span class="leg-dot" style="background:#a371f7;border:1.5px solid #7048aa"></span>Catalog verified (USGS/EMSC)</div>
-      <div><span class="leg-dot" style="background:rgba(248,81,73,.45);border:1px dashed #6e3010"></span>Sensor estimate only</div>
-      <div><span class="leg-dot" style="background:#3fb950;border:1.5px solid #2ea043"></span>Selected</div>
-      <div><span class="leg-dot" style="background:#58a6ff;border:1px solid #3a6fa8"></span>Station</div>
+      <div><span class="leg-dot" style="background:#a371f7;border:1.5px solid #7048aa"></span><span data-i18n="legend_catalog">Catalog verified (USGS/EMSC)</span></div>
+      <div><span class="leg-dot" style="background:rgba(248,81,73,.45);border:1px dashed #6e3010"></span><span data-i18n="legend_sensor">Sensor estimate only</span></div>
+      <div><span class="leg-dot" style="background:#3fb950;border:1.5px solid #2ea043"></span><span data-i18n="legend_selected">Selected</span></div>
+      <div><span class="leg-dot" style="background:#58a6ff;border:1px solid #3a6fa8"></span><span data-i18n="legend_station">Station</span></div>
     </div>
     <div id="fs-overlay">
-      <h3>Stations</h3>
+      <h3 data-i18n="nav_stations">Stations</h3>
       <div id="fso-stations"></div>
       <div id="fso-det" class="fso-det"></div>
     </div>
   </div>
   <div class="right-col">
     <div id="mobile-tabs">
-      <button class="mob-tab active" onclick="_mobTab('dets',this)">&#127937; Detections</button>
-      <button class="mob-tab" onclick="_mobTab('stas',this)">&#128225; Stations</button>
+      <button class="mob-tab active" onclick="_mobTab('dets',this)">&#127937; <span data-i18n="nav_detections">Detections</span></button>
+      <button class="mob-tab" onclick="_mobTab('stas',this)">&#128225; <span data-i18n="nav_stations">Stations</span></button>
     </div>
     <div id="mobile-sta-panel"></div>
     <div id="detections-wrap" class="active">
-    <div class="panel-hdr" style="padding:8px 10px;border-bottom:1px solid #21262d;margin-bottom:0;gap:4px;flex-wrap:wrap"><h2>Detections</h2><span id="det-count" class="det-count"></span>
+    <div class="panel-hdr" style="padding:8px 10px;border-bottom:1px solid #21262d;margin-bottom:0;gap:4px;flex-wrap:wrap"><h2 data-i18n="nav_detections">Detections</h2><span id="det-count" class="det-count"></span>
       <div style="display:flex;gap:4px;margin-left:auto;align-items:center;flex-shrink:0">
-        <select id="mb-filter-sel" title="Minimum magnitude filter" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 5px;font-size:10px;cursor:pointer">
-          <option value="0">any mb</option>
+        <select id="mb-filter-sel" title="Minimum magnitude filter" data-i18n-title="sel_mb_title" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 5px;font-size:10px;cursor:pointer">
+          <option value="0" data-i18n="sel_mb_any">any mb</option>
           <option value="3.5">&#8805;3.5</option>
           <option value="4.0">&#8805;4.0</option>
           <option value="4.5">&#8805;4.5</option>
           <option value="5.0">&#8805;5.0</option>
         </select>
-        <button id="filter-local-btn" title="Show only localized (non-teleseismic) detections" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">&#128205; local</button>
-        <button id="filter-btn" title="Show confirmed catalog matches only" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">&#10003; conf</button>
-        <button id="replay-btn" title="Replay detections on map in chronological order" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">&#9654; replay</button>
+        <button id="filter-local-btn" title="Show only localized (non-teleseismic) detections" data-i18n-title="btn_local_title" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">&#128205; <span data-i18n="btn_local">local</span></button>
+        <button id="filter-btn" title="Show confirmed catalog matches only" data-i18n-title="btn_conf_title" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">&#10003; <span data-i18n="btn_conf">conf</span></button>
+        <button id="replay-btn" title="Replay detections on map in chronological order" data-i18n-title="btn_replay_title" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">&#9654; <span data-i18n="btn_replay">replay</span></button>
       </div>
     </div>
     <div id="replay-bar" style="padding:0 22px 4px;display:flex;flex-direction:column;gap:2px;border-bottom:1px solid #21262d">
@@ -143,7 +151,7 @@ window.SEISMIC_INITIAL_STATE={{ initial_state_json|safe }};
     <div style="flex:1;overflow-y:auto;min-height:0">
       <div id="detections"><div style="padding:8px;display:flex;flex-direction:column;gap:5px"><div class="_skel" style="height:52px;border-radius:4px"></div><div class="_skel" style="height:52px;border-radius:4px"></div><div class="_skel" style="height:52px;border-radius:4px;opacity:.6"></div></div></div>
     </div>
-    <div id="det-more" style="display:none;padding:6px 8px;border-top:1px solid #21262d"><button onclick="showMoreDets()" style="width:100%;background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:4px 10px;font-size:10px;cursor:pointer">&#8595; show older</button></div>
+    <div id="det-more" style="display:none;padding:6px 8px;border-top:1px solid #21262d"><button onclick="showMoreDets()" style="width:100%;background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:4px 10px;font-size:10px;cursor:pointer">&#8595; <span data-i18n="btn_showolder">show older</span></button></div>
     </div><!-- /detections-wrap -->
   </div><!-- /right-col -->
 </div><!-- /grid -->

@@ -272,7 +272,7 @@ const _faultsBtn = document.getElementById('faults-btn');
 function _setFaultBtnState() {
     _faultsBtn.style.color = _faultOn ? '#d29922' : '#6e7681';
     _faultsBtn.style.borderColor = _faultOn ? '#d29922' : '#30363d';
-    _faultsBtn.textContent = '⚡ faults';
+    _faultsBtn.textContent = '⚡ ' + t('btn_faults');
     _faultsBtn.style.opacity = _faultLoading ? '0.5' : '1';
 }
 
@@ -293,7 +293,7 @@ _faultsBtn.addEventListener('click', async function () {
     }
 
     try {
-        _faultsBtn.textContent = '⏳ loading...';
+        _faultsBtn.textContent = '⏳ ' + t('btn_faults_loading');
         const r = await fetch(CONFIG.faultGeojsonUrl || '/static/gem_active_faults.geojson');
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const geojson = await r.json();
@@ -464,6 +464,24 @@ function fmtLocal(isoStr) {
 }());
 
 
+// ── Language selector ─────────────────────────────────────────────────────────
+
+window._onLangChange = function () {
+    detMarkers.forEach(function (entry) { epiCluster.removeLayer(entry.m); });
+    detMarkers.length = 0;
+    update();
+};
+
+(function () {
+    const sel = document.getElementById('lang-sel');
+    if (!sel) { return; }
+    sel.value = currentLang();
+    sel.addEventListener('change', function () {
+        setLang(sel.value);
+    });
+}());
+
+
 // ── Fullscreen ────────────────────────────────────────────────────────────────
 
 const _fsBtn = document.getElementById('fs-btn');
@@ -471,7 +489,7 @@ const _fsBtn = document.getElementById('fs-btn');
 function _applyFsMode(on) {
     document.body.classList.toggle('fs-mode', on);
     _fsBtn.textContent = on ? '✕' : '⛶';
-    _fsBtn.title = on ? 'Exit fullscreen' : 'Toggle fullscreen';
+    _fsBtn.title = on ? t('btn_fullscreen_exit_title') : t('btn_fullscreen_title');
     setTimeout(function () { map.invalidateSize(); }, 150);
 }
 
@@ -903,12 +921,12 @@ let lastDetTs = null;
 let audioCtx = null;
 
 const muteBtn = document.getElementById('mute-btn');
-muteBtn.textContent = audioEnabled ? '🔔 on' : '🔕 off';
+muteBtn.textContent = audioEnabled ? '🔔 ' + t('btn_mute_on') : '🔕 ' + t('btn_mute_off');
 muteBtn.style.color = audioEnabled ? '#8b949e' : '#6e7681';
 
 muteBtn.addEventListener('click', function () {
     audioEnabled = !audioEnabled;
-    muteBtn.textContent = audioEnabled ? '🔔 on' : '🔕 off';
+    muteBtn.textContent = audioEnabled ? '🔔 ' + t('btn_mute_on') : '🔕 ' + t('btn_mute_off');
     muteBtn.style.color = audioEnabled ? '#8b949e' : '#6e7681';
     if (!audioCtx) { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
     saveSettings({ audioEnabled });
@@ -920,7 +938,7 @@ notifBtn.addEventListener('click', async function () {
         if (!('Notification' in window)) { return; }
         let perm = Notification.permission;
         if (perm === 'default') { perm = await Notification.requestPermission(); }
-        if (perm !== 'granted') { notifBtn.title = 'Browser blocked notifications'; return; }
+        if (perm !== 'granted') { notifBtn.title = t('notif_blocked'); return; }
         desktopNotifEnabled = true;
         notifBtn.style.color = '#58a6ff';
         notifBtn.style.borderColor = '#58a6ff';
@@ -1077,7 +1095,7 @@ function _replayStop() {
     _replayActive = false;
     _unpinMarker();
     const btn = document.getElementById('replay-btn');
-    if (btn) { btn.textContent = '▶ replay'; }
+    if (btn) { btn.textContent = '▶ ' + t('btn_replay'); }
     const cursor = document.getElementById('replay-cursor');
     if (cursor) { cursor.style.display = 'none'; }
 }
@@ -1136,7 +1154,7 @@ function _replayStart(dets) {
     let idx = lo;
 
     const btn = document.getElementById('replay-btn');
-    if (btn) { btn.textContent = '⏹ stop'; }
+    if (btn) { btn.textContent = '⏹ ' + t('btn_replay_stop'); }
 
     function step() {
         if (!_replayActive) { return; }
@@ -1310,7 +1328,7 @@ function _buildMbChip(det) {
 function _buildEpiChip(det) {
     if (!det.epicenter) { return ''; }
     if (det.teleseismic) {
-        return '<span class="chip chip-epi" title="Localization unreliable (high residual) — likely distant teleseismic source" style="opacity:.7">&#x1F310; teleseismic</span>';
+        return '<span class="chip chip-epi" title="Localization unreliable (high residual) — likely distant teleseismic source" style="opacity:.7">&#x1F310; ' + t('det_teleseismic') + '</span>';
     }
     const la = det.epicenter[0], lo = det.epicenter[1];
     const ns = la >= 0 ? 'N' : 'S', ew = lo >= 0 ? 'E' : 'W';
@@ -1494,7 +1512,7 @@ function _renderStations(d) {
 function _renderDetections(dets, filteredDets, serverStart) {
     const dDiv = document.getElementById('detections');
     if (!dets.length) {
-        dDiv.innerHTML = '<div class="no-data">No detections yet</div>';
+        dDiv.innerHTML = '<div class="no-data">' + t('det_none') + '</div>';
         return;
     }
 
@@ -1567,10 +1585,10 @@ function _renderEpiMarkers(filteredDets) {
         const origLo   = hasOrig ? det.epicenter[1] : null;
         const origStr  = hasOrig ? Math.abs(origLa).toFixed(2) + '°' + (origLa >= 0 ? 'N' : 'S') + ' ' + Math.abs(origLo).toFixed(2) + '°' + (origLo >= 0 ? 'E' : 'W') : '';
         const origLink = hasOrig
-            ? '<div class="tip-loc-orig"><a href="#" onclick="event.preventDefault();event.stopPropagation();map.flyTo([' + origLa + ',' + origLo + '],map.getZoom(),{duration:1.0})">sensor: ' + origStr + '</a></div>'
+            ? '<div class="tip-loc-orig"><a href="#" onclick="event.preventDefault();event.stopPropagation();map.flyTo([' + origLa + ',' + origLo + '],map.getZoom(),{duration:1.0})">' + t('tip_sensor') + ': ' + origStr + '</a></div>'
             : '';
 
-        const teleBadge = det.teleseismic ? '<span class="tip-badge tele">teleseismic</span>' : '';
+        const teleBadge = det.teleseismic ? '<span class="tip-badge tele">' + t('det_teleseismic') + '</span>' : '';
         const confVal   = det.conf != null ? det.conf.toFixed(3) : null;
         const confBadge = confVal ? '<span class="tip-badge conf-ok" title="PhaseNet consensus confidence">conf ' + confVal + '</span>' : '';
         const badges    = (teleBadge || confBadge) ? '<div class="tip-badges">' + teleBadge + confBadge + '</div>' : '';
@@ -1584,16 +1602,17 @@ function _renderEpiMarkers(filteredDets) {
         const depthM  = usgsCoords && det.usgs.depth != null ? Math.abs(det.usgs.depth) : null;
         const depthStr = depthM != null ? depthM.toFixed(0) + ' km depth' : null;
         const catRow  = catMag
-            ? '<div class="tip-row"><span class="tip-row-label">catalog</span><span class="tip-cat-val">' + catMag + (depthStr ? ' <span class="tip-depth">· ' + depthStr + '</span>' : '') + '</span></div>'
+            ? '<div class="tip-row"><span class="tip-row-label">' + t('tip_catalog') + '</span><span class="tip-cat-val">' + catMag + (depthStr ? ' <span class="tip-depth">· ' + depthStr + '</span>' : '') + '</span></div>'
             : '';
-        const stasRow = '<div class="tip-row"><span class="tip-row-label">stations</span><span class="tip-stas-val">' + det.stations.join(' · ') + '</span></div>';
-        const locRow  = '<div class="tip-row"><span class="tip-row-label">' + locSrc.toLowerCase() + '</span><span class="tip-loc-val">' + Math.abs(la).toFixed(2) + '°' + (la >= 0 ? 'N' : 'S') + ' ' + Math.abs(lo).toFixed(2) + '°' + (lo >= 0 ? 'E' : 'W') + '</span></div>';
+        const stasRow = '<div class="tip-row"><span class="tip-row-label">' + t('tip_stations') + '</span><span class="tip-stas-val">' + det.stations.join(' · ') + '</span></div>';
+        const locLabel = locSrc.toLowerCase() === 'sensor' ? t('tip_sensor') : locSrc.toLowerCase();
+        const locRow  = '<div class="tip-row"><span class="tip-row-label">' + locLabel + '</span><span class="tip-loc-val">' + Math.abs(la).toFixed(2) + '°' + (la >= 0 ? 'N' : 'S') + ' ' + Math.abs(lo).toFixed(2) + '°' + (lo >= 0 ? 'E' : 'W') + '</span></div>';
         const sLeadS  = _sWaveLeadSeconds(det, la, lo);
         const leadRow = sLeadS != null
-            ? '<div class="tip-row" title="Estimated time between the P-wave detection and S-wave arrival at the nearest firing station — Vp/Vs~1.73 approximation, not measured"><span class="tip-row-label">S-wave lead</span><span class="tip-loc-val">~' + _fmtLead(sLeadS) + '</span></div>'
+            ? '<div class="tip-row" title="Estimated time between the P-wave detection and S-wave arrival at the nearest firing station — Vp/Vs~1.73 approximation, not measured"><span class="tip-row-label">' + t('tip_swavelead') + '</span><span class="tip-loc-val">~' + _fmtLead(sLeadS) + '</span></div>'
             : '';
         const origRow = hasOrig
-            ? '<div class="tip-row tip-loc-orig"><span class="tip-row-label">sensor</span><a href="#" onclick="event.preventDefault();event.stopPropagation();map.flyTo([' + origLa + ',' + origLo + '],map.getZoom(),{duration:1.0})">' + Math.abs(origLa).toFixed(2) + '°' + (origLa >= 0 ? 'N' : 'S') + ' ' + Math.abs(origLo).toFixed(2) + '°' + (origLo >= 0 ? 'E' : 'W') + '</a></div>'
+            ? '<div class="tip-row tip-loc-orig"><span class="tip-row-label">' + t('tip_sensor') + '</span><a href="#" onclick="event.preventDefault();event.stopPropagation();map.flyTo([' + origLa + ',' + origLo + '],map.getZoom(),{duration:1.0})">' + Math.abs(origLa).toFixed(2) + '°' + (origLa >= 0 ? 'N' : 'S') + ' ' + Math.abs(origLo).toFixed(2) + '°' + (origLo >= 0 ? 'E' : 'W') + '</a></div>'
             : '';
 
         const eid      = usgsCoords && det.usgs.event_id;
@@ -1667,7 +1686,7 @@ function _setBootOverlay(show) {
 function _updateBootMsg(streak) {
     const msg = document.getElementById('boot-msg');
     if (!msg) { return; }
-    msg.textContent = streak < 6 ? 'connecting to sensor…' : 'server restarting — waiting for boot…';
+    msg.textContent = streak < 6 ? t('boot_connecting') : t('status_restarting');
 }
 
 function update() {
@@ -1830,8 +1849,8 @@ function _updateBody(d) {
         const src     = (ld.usgs && (ld.usgs.source || 'usgs').toUpperCase()) || '';
         const usgsStr = ld.usgs
             ? src + ': M' + ld.usgs.mag + ' ' + (ld.usgs.place || '').split(',')[0]
-            : ld.usgs_checked ? 'no catalog match' : 'catalog pending';
-        fsoDet.innerHTML = '<div style="color:#8b949e;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Latest Detection</div>'
+            : ld.usgs_checked ? t('fs_no_match') : t('fs_pending');
+        fsoDet.innerHTML = '<div style="color:#8b949e;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">' + t('fs_latest') + '</div>'
             + '<div style="color:#e6edf3">' + fmtLocal(ld.ts) + '</div>'
             + '<div style="color:#58a6ff;margin:2px 0">' + ld.stations.join(' · ') + '</div>'
             + '<div style="color:#d29922">' + mbStr + '</div>'
@@ -1966,7 +1985,7 @@ function _mobTab(which, btn) {
                 + '<a href="/api/scoreboard" target="_blank" style="color:#484f58;font-size:9px;text-decoration:none">raw ↗</a>';
             scoreEl.style.opacity = '1';
         }).catch(function () {
-            scoreEl.innerHTML = '<span style="color:#484f58;font-size:10px">unavailable</span>';
+            scoreEl.innerHTML = '<span style="color:#484f58;font-size:10px">' + t('score_unavailable') + '</span>';
             scoreEl.style.opacity = '1';
         });
     }
