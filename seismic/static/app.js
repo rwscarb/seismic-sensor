@@ -464,6 +464,44 @@ document.addEventListener('keydown', function (e) {
 });
 
 
+// ── S-wave lead time ─────────────────────────────────────────────────────────
+// P-waves outrun S-waves, so a P-wave-triggered detection gives real advance
+// notice before the (usually more damaging) S-wave arrives. Vp/Vs ~= 1.73 is
+// the standard Poisson-solid approximation — the app itself only models
+// P-wave travel time (P_VEL_KM_S), so S-wave velocity is derived here, not
+// read from a config value.
+const VP_VS_RATIO = 1.73;
+
+function _haversineKm(lat1, lon1, lat2, lon2) {
+    const R = 6371.0;
+    const toRad = function (d) { return d * Math.PI / 180; };
+    const dphi = toRad(lat2 - lat1);
+    const dlmb = toRad(lon2 - lon1);
+    const a = Math.sin(dphi / 2) ** 2
+        + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dlmb / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function _sWaveLeadSeconds(det, epicLat, epicLon) {
+    const pVel = CONFIG.pVelKmS || 8.0;
+    const sVel = pVel / VP_VS_RATIO;
+    let minDist = null;
+    (det.stations || []).forEach(function (key) {
+        const coord = sCoords[key];
+        if (!coord) { return; }
+        const d = _haversineKm(epicLat, epicLon, coord[0], coord[1]);
+        if (minDist == null || d < minDist) { minDist = d; }
+    });
+    if (minDist == null) { return null; }
+    return minDist * (1 / sVel - 1 / pVel);
+}
+
+function _fmtLead(seconds) {
+    if (seconds < 60) { return seconds.toFixed(0) + 's'; }
+    return (seconds / 60).toFixed(1) + ' min';
+}
+
+
 // ── Epicenter visualization ───────────────────────────────────────────────────
 
 let _epiLines = [], _pWaveCircle = null, _pWaveRingIv = null;
@@ -1397,6 +1435,10 @@ function _renderEpiMarkers(filteredDets) {
             : '';
         const stasRow = '<div class="tip-row"><span class="tip-row-label">stations</span><span class="tip-stas-val">' + det.stations.join(' · ') + '</span></div>';
         const locRow  = '<div class="tip-row"><span class="tip-row-label">' + locSrc.toLowerCase() + '</span><span class="tip-loc-val">' + Math.abs(la).toFixed(2) + '°' + (la >= 0 ? 'N' : 'S') + ' ' + Math.abs(lo).toFixed(2) + '°' + (lo >= 0 ? 'E' : 'W') + '</span></div>';
+        const sLeadS  = _sWaveLeadSeconds(det, la, lo);
+        const leadRow = sLeadS != null
+            ? '<div class="tip-row" title="Estimated time between the P-wave detection and S-wave arrival at the nearest firing station — Vp/Vs~1.73 approximation, not measured"><span class="tip-row-label">S-wave lead</span><span class="tip-loc-val">~' + _fmtLead(sLeadS) + '</span></div>'
+            : '';
         const origRow = hasOrig
             ? '<div class="tip-row tip-loc-orig"><span class="tip-row-label">sensor</span><a href="#" onclick="event.preventDefault();event.stopPropagation();map.flyTo([' + origLa + ',' + origLo + '],map.getZoom(),{duration:1.0})">' + Math.abs(origLa).toFixed(2) + '°' + (origLa >= 0 ? 'N' : 'S') + ' ' + Math.abs(origLo).toFixed(2) + '°' + (origLo >= 0 ? 'E' : 'W') + '</a></div>'
             : '';
@@ -1420,6 +1462,7 @@ function _renderEpiMarkers(filteredDets) {
             +   catRow
             +   stasRow
             +   locRow
+            +   leadRow
             +   origRow
             + '</div>'
             + footHtml
