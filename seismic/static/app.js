@@ -1500,6 +1500,13 @@ function _renderEpiMarkers(filteredDets) {
         const moved  = newLat != null && (Math.abs(newLat - entry.lat) > 0.5 || Math.abs(newLon - entry.lon) > 0.5);
         if (!epiTsSet.has(entry.ts) || moved) {
             epiCluster.removeLayer(entry.m);
+            // _pinMarker can pop a marker directly onto the map (out of
+            // epiCluster) so its tooltip shows without moving the view —
+            // epiCluster.removeLayer() is a silent no-op for a marker in
+            // that state, so without this it becomes a permanent orphan on
+            // the map when its detection ages out or its epicenter moves.
+            if (map.hasLayer(entry.m)) { map.removeLayer(entry.m); }
+            if (_pinnedMarker === entry.m) { _pinnedMarker = null; _pinnedPopped = false; }
         } else {
             keptTs.add(entry.ts);
         }
