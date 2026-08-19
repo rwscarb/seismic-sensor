@@ -334,5 +334,8 @@
     window.availableLangs = availableLangs;
     window.applyStaticI18n = applyStaticI18n;
 
-    document.addEventListener('DOMContentLoaded', applyStaticI18n);
+    document.addEventListener('DOMContentLoaded', function () {
+        applyStaticI18n();
+        document.documentElement.classList.add('i18n-ready');
+    });
 })();

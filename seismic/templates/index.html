@@ -11,7 +11,15 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+<style>
+/* i18n cloak: hide the page until translations are applied, so refreshing
+   with a non-English language selected doesn't flash the English fallback
+   text baked into the HTML before JS swaps it in. */
+html:not(.i18n-ready) body{opacity:0}
+html.i18n-ready body{opacity:1;transition:opacity .12s ease}
+</style>
 <script src="{{ url_for('static', filename='i18n.js') }}"></script>
+<noscript><style>body{opacity:1!important}</style></noscript>
 <style>
 @keyframes _skel-pulse{0%,100%{opacity:.35}50%{opacity:.7}}
 ._skel{background:#21262d;border-radius:3px;animation:_skel-pulse 1.4s ease-in-out infinite}
