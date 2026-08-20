@@ -53,25 +53,25 @@ window.SEISMIC_INITIAL_STATE={{ initial_state_json|safe }};
   <span id="last-event-summary"></span>
   <span id="last-update" data-i18n="status_connecting">connecting...</span>
   <div id="header-controls" style="margin-left:auto;display:flex;align-items:center;gap:4px;flex-shrink:0;flex-wrap:nowrap">
-  <select id="lang-sel" title="Language" data-i18n-title="lang_label" style="background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 5px;font-size:11px;cursor:pointer">
+  <select id="lang-sel" class="hdr-sel" title="Language" data-i18n-title="lang_label">
     <option value="en">EN</option>
     <option value="es">ES</option>
     <option value="fr">FR</option>
     <option value="de">DE</option>
     <option value="ja">JA</option>
   </select>
-  <button id="sat-btn" title="Toggle satellite imagery (ESRI World Imagery)" data-i18n-title="btn_sat_title" style="background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer">&#x1F6F0; <span data-i18n="btn_sat">sat</span></button>
-  <button id="faults-btn" title="Toggle active fault overlay (GEM Global Active Faults)" data-i18n-title="btn_faults_title" style="background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer">&#9889; <span data-i18n="btn_faults">faults</span></button>
-  <button id="mute-btn" title="Toggle audio alerts" data-i18n-title="btn_mute_title" style="background:#161b22;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer">&#128266; <span data-i18n="btn_mute_on">on</span></button>
-  <button id="notif-btn" title="Toggle desktop notifications" data-i18n-title="btn_notif_title" style="background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer">&#128276; <span data-i18n="btn_notif">notif</span></button>
-  <select id="notif-mb-sel" title="Minimum magnitude to trigger alerts" data-i18n-title="sel_notif_mb_title" style="background:#161b22;border:1px solid #30363d;color:#6e7681;border-radius:4px;padding:2px 5px;font-size:11px;cursor:pointer">
+  <button id="sat-btn" class="hdr-btn" title="Toggle satellite imagery (ESRI World Imagery)" data-i18n-title="btn_sat_title">&#x1F6F0; <span data-i18n="btn_sat">sat</span></button>
+  <button id="faults-btn" class="hdr-btn" title="Toggle active fault overlay (GEM Global Active Faults)" data-i18n-title="btn_faults_title">&#9889; <span data-i18n="btn_faults">faults</span></button>
+  <button id="mute-btn" class="hdr-btn" title="Toggle audio alerts" data-i18n-title="btn_mute_title" style="color:#8b949e">&#128266; <span data-i18n="btn_mute_on">on</span></button>
+  <button id="notif-btn" class="hdr-btn" title="Toggle desktop notifications" data-i18n-title="btn_notif_title">&#128276; <span data-i18n="btn_notif">notif</span></button>
+  <select id="notif-mb-sel" class="hdr-sel" title="Minimum magnitude to trigger alerts" data-i18n-title="sel_notif_mb_title">
     <option value="0" data-i18n="sel_notif_mb_all">all mb</option>
     <option value="3.5">&#8805;3.5</option>
     <option value="4.0">&#8805;4.0</option>
     <option value="4.5">&#8805;4.5</option>
     <option value="5.0">&#8805;5.0</option>
   </select>
-  <select id="tz-sel" title="Display timezone" data-i18n-title="sel_tz_title" style="background:#161b22;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:2px 5px;font-size:11px;cursor:pointer">
+  <select id="tz-sel" class="hdr-sel" title="Display timezone" data-i18n-title="sel_tz_title" style="color:#8b949e">
     <option value="auto">Auto TZ</option>
     <option value="UTC">UTC</option>
     <option value="America/Los_Angeles">Pacific</option>

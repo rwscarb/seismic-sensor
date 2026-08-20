@@ -201,3 +201,14 @@ body.fs-mode #fs-overlay{display:block}
   border-radius:1px;transform:translateX(-50%);pointer-events:none;
   box-shadow:0 0 3px rgba(248,81,73,.8);display:none
 }
+
+/* Header controls — buttons and selects mix native UA chrome that don't
+   share intrinsic height, so pin box-sizing+height explicitly rather than
+   relying on padding alone to make the row line up. */
+.hdr-btn,.hdr-sel{
+  box-sizing:border-box;height:24px;background:#161b22;
+  border:1px solid #30363d;border-radius:4px;font-size:11px;
+  cursor:pointer;color:#6e7681
+}
+.hdr-btn{display:inline-flex;align-items:center;justify-content:center;padding:0 8px}
+.hdr-sel{padding:0 5px}
