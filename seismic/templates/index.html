@@ -27,6 +27,9 @@ html.i18n-ready body{opacity:1;transition:opacity .12s ease}
 <script>
 window.SEISMIC_CONFIG={
   threshold:{{ threshold }},
+  nConsensus:{{ n_consensus }},
+  allStations:{{ all_stations_count }},
+  consensusWindow:{{ consensus_window }},
   usgsMag:{{ usgs_min_mag }},
   emscMag:{{ emsc_min_mag }},
   sCoords:{{ station_coords_json|safe }},
@@ -49,7 +52,7 @@ window.SEISMIC_INITIAL_STATE={{ initial_state_json|safe }};
 <header>
   <div id="status-dot"></div>
   <h1>&#127757; <span data-i18n="app_title">Seismic Sensor</span></h1>
-  <span id="cfg" title="SeedLink: {{ seedlink }}">{{ cfg_text }}</span>
+  <span id="cfg" title="SeedLink: {{ seedlink }}"></span>
   <span id="last-event-summary"></span>
   <span id="last-update" data-i18n="status_connecting">connecting...</span>
   <div id="header-controls" style="margin-left:auto;display:flex;align-items:center;gap:4px;flex-shrink:0;flex-wrap:nowrap">
@@ -102,7 +105,7 @@ window.SEISMIC_INITIAL_STATE={{ initial_state_json|safe }};
           <button class="score-win-btn" data-days="3"  style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:3px;padding:1px 5px;font-size:9px;cursor:pointer">3d</button>
           <button class="score-win-btn" data-days="7"  style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:3px;padding:1px 5px;font-size:9px;cursor:pointer">7d</button>
           <button class="score-win-btn" data-days="30" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:3px;padding:1px 5px;font-size:9px;cursor:pointer">30d</button>
-          <button class="score-win-btn" data-days="30" data-since-restart="1" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:3px;padding:1px 5px;font-size:9px;cursor:pointer">↑restart</button>
+          <button class="score-win-btn" data-days="30" data-since-restart="1" style="background:#0d1117;border:1px solid #30363d;color:#6e7681;border-radius:3px;padding:1px 5px;font-size:9px;cursor:pointer">↑<span data-i18n="score_since_restart">restart</span></button>
         </div>
       </div>
       <div id="scoreboard-content" style="color:#8b949e"><div class="_skel" style="height:28px;border-radius:3px;margin-bottom:4px"></div><div class="_skel" style="height:28px;border-radius:3px"></div></div>

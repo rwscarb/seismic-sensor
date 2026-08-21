@@ -466,11 +466,25 @@ function fmtLocal(isoStr) {
 
 // ── Language selector ─────────────────────────────────────────────────────────
 
+function _renderCfgLine() {
+    const cfgEl = document.getElementById('cfg');
+    if (!cfgEl) { return; }
+    cfgEl.textContent = t('cfg_text', {
+        threshold: CONFIG.threshold,
+        n: CONFIG.nConsensus,
+        total: CONFIG.allStations,
+        window: CONFIG.consensusWindow,
+    });
+}
+
 window._onLangChange = function () {
     detMarkers.forEach(function (entry) { epiCluster.removeLayer(entry.m); });
     detMarkers.length = 0;
+    _renderCfgLine();
     update();
 };
+
+_renderCfgLine();
 
 (function () {
     const sel = document.getElementById('lang-sel');
@@ -1392,7 +1406,7 @@ function _buildDetRow(det, serverStart, deployLabel, sepInserted) {
     if (!sepInserted.done && det.unix_ts < serverStart) {
         sepInserted.done = true;
         sep = '<div class="det-deploy-sep" title="Process restarted / new version deployed at '
-            + fmtLocal(new Date(serverStart * 1000).toISOString()) + '">deployed ' + deployLabel + '</div>';
+            + fmtLocal(new Date(serverStart * 1000).toISOString()) + '">' + t('det_deployed', { label: deployLabel }) + '</div>';
     }
 
     const mbNote = det.mb != null
@@ -1718,7 +1732,7 @@ function _updateBody(d) {
     const now       = new Date();
     const localStr  = now.toLocaleTimeString('en', { timeZone: _activeTz(), hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' ' + _tzAbbr();
     const utcStr    = now.toLocaleTimeString('en', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) + ' UTC';
-    document.getElementById('last-update').textContent = 'updated ' + localStr + ' (' + utcStr + ')';
+    document.getElementById('last-update').textContent = t('updated_at', { local: localStr, utc: utcStr });
 
     if (d.now) {
         _serverClockOffset = d.now - Date.now() / 1000;
@@ -1779,7 +1793,9 @@ function _updateBody(d) {
             ? (ld.mb_local ? 'local' : ld.mb_approx ? 'mb~' + ld.mb.toFixed(1) : 'mb=' + ld.mb.toFixed(1))
             : 'mb…';
         const age = fmtAge(ld.unix_ts);
-        sumEl.textContent = 'Last: ' + mbStr + ' · ' + (age === '—' ? 'future?' : age) + ' ago';
+        sumEl.textContent = age === '—'
+            ? t('last_event_future', { mag: mbStr })
+            : t('last_event', { mag: mbStr, age: age });
     }
 
     // Index space here must match what _replayStart/_previewReplayAt actually
@@ -1984,9 +2000,12 @@ function _mobTab(which, btn) {
             const precC = typeof precV === 'number' ? col(precV) : '#6e7681';
             const recC  = typeof recV  === 'number' ? col(recV)  : '#6e7681';
             scoreEl.innerHTML =
-                metricRow('precision', precV, precC, (sb.confirmed || 0) + '/' + (sb.checked || 0) + ' detections confirmed')
-                + metricRow('recall', recV, recC, (rc.true_positives || 0) + '/' + (rc.usgs_events || 0) + ' USGS events caught')
-                + '<a href="/api/scoreboard" target="_blank" style="color:#484f58;font-size:9px;text-decoration:none">raw ↗</a>';
+                metricRow(t('score_precision'), precV, precC,
+                    t('score_confirmed_frac', { n: sb.confirmed || 0, d: sb.checked || 0 }))
+                + metricRow(t('score_recall'), recV, recC,
+                    t('score_recall_frac', { n: rc.true_positives || 0, d: rc.usgs_events || 0 }))
+                + '<a href="/api/scoreboard" target="_blank" style="color:#484f58;font-size:9px;text-decoration:none">'
+                + t('score_raw') + ' ↗</a>';
             scoreEl.style.opacity = '1';
         }).catch(function () {
             scoreEl.innerHTML = '<span style="color:#484f58;font-size:10px">' + t('score_unavailable') + '</span>';
@@ -2009,6 +2028,12 @@ function _mobTab(which, btn) {
 
     loadScoreboard();
     setInterval(loadScoreboard, 60000);
+
+    const _prevOnLangChange = window._onLangChange;
+    window._onLangChange = function (lang) {
+        if (_prevOnLangChange) { _prevOnLangChange(lang); }
+        loadScoreboard();
+    };
 }());
 
 

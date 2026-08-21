@@ -35,7 +35,6 @@ def start_web_server():
 
     coords_json = json.dumps({k: list(v) for k, v in list(station_coords.items())})
     sta_list = ', '.join(f"{n}.{s}" for n, s in STATIONS)
-    cfg_text = f"threshold {THRESHOLD} | {N_CONSENSUS}/{len(ALL_STATIONS)} consensus | {CONSENSUS_WINDOW:.0f}s window"
     app_title = f"{sta_list} | fra"
 
     _recall_cache = {}   # {(days, minmag): (ts, result)}
@@ -84,9 +83,11 @@ def start_web_server():
         return render_template(
             'index.html',
             app_title=app_title,
-            cfg_text=cfg_text,
             seedlink=SEEDLINK_SERVER,
             threshold=THRESHOLD,
+            n_consensus=N_CONSENSUS,
+            all_stations_count=len(ALL_STATIONS),
+            consensus_window=CONSENSUS_WINDOW,
             usgs_min_mag=USGS_MIN_MAG,
             emsc_min_mag=EMSC_MIN_MAG,
             umami_id=UMAMI_SITE_ID,
