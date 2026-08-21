@@ -1,0 +1,59 @@
+app = 'seismic-sensor-alpha'
+primary_region = 'fra'
+
+[build]
+
+[env]
+  SEEDLINK_SERVER  = 'geofon.gfz-potsdam.de:18000'
+  STATIONS         = 'GE.APE,GE.MORC,GE.KBS,GE.WLF,GE.MATE,GE.KARP,CX.PSGCX,CX.HMBCX,DK.GDH,DK.SCO,GE.KIBK,GE.LBTB,GE.PMG,GE.HNR'
+  CHANNELS         = 'HHZ,HHN,HHE'
+  THRESHOLD        = '0.835'
+  N_SEEDS          = '3'
+  ALERT_COOLDOWN   = '300.0'
+  N_CONSENSUS      = '2'
+  CONSENSUS_WINDOW = '240'
+  MIN_LOGIT_GAP    = '0.5'
+  STALTA_ON        = '1'
+  STALTA_SHORT_S   = '0.5'
+  STALTA_LONG_S    = '10.0'
+  STALTA_THRESH    = '2.5'
+  P_VEL_KM_S      = '8.0'
+  LOC_MIN_STA      = '3'
+  P_LEAD_S         = '0.4'
+  CHECKPOINT_DIR   = '/data/checkpoints'
+  DETECTIONS_PATH  = '/data/detections.json'
+  USGS_MIN_MAG     = '3.0'
+  EMSC_MIN_MAG     = '2.0'
+  IRIS_SERVER      = 'rtserve.iris.washington.edu:18000'
+  IRIS_STATIONS    = 'IU.ANMO,IU.COR,IU.KIP,IU.MAJO,IU.NWAO,IU.RCBR,IU.MSEY,IU.TATO,IU.AFI,II.DGAR'
+  SEISBENCH_CACHE_ROOT = '/data/seisbench'
+  APP_URL              = 'https://alpha.seismic.fib896.com'
+  TRAINING_DIR         = '/data/training'
+  COLLECT              = '1'
+  OTTO_ENABLED         = '0'
+
+[deploy]
+  strategy     = "rolling"
+  wait_timeout = "300s"
+
+[http_service]
+  internal_port        = 8080
+  force_https          = true
+  auto_stop_machines   = "off"
+  auto_start_machines  = false
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "15s"
+    interval     = "5s"
+    method       = "GET"
+    path         = "/health"
+    timeout      = "10s"
+
+[[mounts]]
+  source      = "seismic_data_alpha"
+  destination = "/data"
+
+[[vm]]
+  size   = 'shared-cpu-2x'
+  memory = '2gb'
