@@ -4,7 +4,7 @@ Real-time seismic P-wave detector using a streaming neural network ensemble, dep
 
 ## How it works
 
-A 3-seed ensemble of **StreamingNet** models (1D CNN + orbit-permuted Hebbian buffer) listens to live SeedLink feeds from GEOFON and supplementary networks. When N_CONSENSUS stations independently fire within a 60-second window, a detection is logged. Epicenters are estimated via a flat-earth P-wave arrival time inversion (Nelder-Mead). Detections are cross-checked against USGS and EMSC earthquake catalogs.
+A 3-seed ensemble of **StreamingNet** models (1D CNN + orbit-permuted Hebbian buffer) listens to live SeedLink feeds from GEOFON and supplementary networks. When N_CONSENSUS stations independently fire within a 240-second window, a detection is logged (widened from 60s on 2026-08-19 — backfilled M5.5-6.9 events showed 98-208s between confirming stations' peak-confidence times, well past the old window). Epicenters are estimated via a flat-earth P-wave arrival time inversion (Nelder-Mead). Detections are cross-checked against USGS and EMSC earthquake catalogs.
 
 ```
 SeedLink stream → normalize → StreamingNet × 3 seeds → ensemble vote
@@ -42,8 +42,12 @@ The buffer permutation is seeded per ensemble member, diversifying the feature b
 | CX | HMBCX | Humberstone, Chile |
 | DK | GDH | Godhavn, Greenland |
 | DK | SCO | Scoresbysund, Greenland |
+| GE | KIBK | Kibungo, Rwanda |
+| GE | LBTB | Lobatse, Botswana |
+| GE | PMG | Port Moresby, Papua New Guinea |
+| GE | HNR | Honiara, Solomon Islands |
 
-Primary streams via `geofon.gfz-potsdam.de:18000` (GEOFON).
+Primary streams via `geofon.gfz-potsdam.de:18000` (GEOFON). Station list above reflects `fly.toml`'s `STATIONS` — check that file for the current live set, since it's changed more often than this table.
 
 **IRIS note:** `rtserve.iris.washington.edu:18000` was upgraded to RingServer/4.5.6 (SeedLink v4.0 protocol) in 2026. obspy `EasySeedLinkClient` (v3.1) is incompatible — station SELECT and DATA commands are rejected. IRIS stations (`IRIS_STATIONS` in `fly.toml`) currently do not stream successfully; set to empty if you want a clean log.
 
@@ -51,7 +55,12 @@ Primary streams via `geofon.gfz-potsdam.de:18000` (GEOFON).
 
 ```bash
 # Deploy to Fly.io (requires fly CLI + authenticated account)
+# Smart: static/template-only changes push via sftp with no restart;
+# anything else triggers a full `fly deploy`
 make deploy
+
+# Force-push static/template files to the running container, skipping the smart-deploy diff check
+make deploy-static
 
 # Force full rebuild (e.g. after Dockerfile changes)
 make deploy-clean
@@ -59,6 +68,8 @@ make deploy-clean
 # Tail live logs
 make fly-logs
 ```
+
+**Note:** env vars set in `fly.toml` override the Python defaults in `config.py` — if you change a default in code (e.g. the `P_LEAD_S` 0.4→0.5 fix on 2026-08-20), also update `fly.toml`/`fly.alpha.toml` or the code change won't actually take effect in prod. This has bitten us before.
 
 ## Training
 
@@ -116,13 +127,29 @@ All parameters are set via environment variables (see `fly.toml` and `.env.examp
 | `IRIS_STATIONS` | `IU.COR,...` | Comma-separated station list for secondary server |
 | `CHANNELS` | `HHZ,HHN,HHE` | Seismic channels |
 | `THRESHOLD` | `0.835` | Detection confidence threshold |
-| `N_CONSENSUS` | `2` | Stations required to confirm a detection (2 is appropriate for this sparse 10-station network) |
-| `CONSENSUS_WINDOW` | `60` | Seconds within which consensus must occur |
+| `N_CONSENSUS` | `2` | Stations required to confirm a detection (2 is appropriate for this sparse network) |
+| `CONSENSUS_WINDOW` | `240` | Seconds within which consensus must occur (widened from 60 on 2026-08-19, see above) |
+| `ALERT_COOLDOWN` | `60` (`300` in prod) | Minimum gap between fired alerts overall |
+| `PER_STATION_COOLDOWN` | `120` | Minimum gap between alerts from the same station |
 | `N_SEEDS` | `3` | Ensemble size |
 | `STALTA_ON` | `1` | Enable STA/LTA pre-filter (blocks low-energy noise) |
 | `STALTA_SHORT_S` | `0.5` | STA window length (seconds) |
 | `STALTA_LONG_S` | `10.0` | LTA window length (seconds) |
 | `STALTA_THRESH` | `2.5` | Minimum STA/LTA ratio to pass to consensus |
+| `STALTA_LARGE_THRESH` | `12.0` | STA/LTA ratio indicating a large event |
+| `THRESHOLD_LARGE` | `0.45` | Lowered confidence threshold used for large-event rescue |
+| `MIN_LOGIT_GAP` | `0.0` | Minimum classifier logit gap required (0 = disabled, no empirical baseline yet) |
+| `P_LEAD_S` | `0.5` | Model's pre-P horizon; must match between `config.py`'s default and `fly.toml`'s env override — they drifted once, see Deploy note |
+| `P_VEL_KM_S` | `8.0` | Assumed P-wave velocity for epicenter localization |
+| `LOC_MIN_STA` | `3` | Minimum stations required to attempt localization |
+| `USGS_MIN_MAG` | `4.0` | Minimum magnitude for USGS catalog cross-check |
+| `EMSC_MIN_MAG` | `2.0` | Minimum magnitude for EMSC fallback cross-check |
+| `USGS_SIG_MIN_MAG` | `5.5` | Minimum magnitude to flag as a "significant event" poll |
+| `TELE_MATCH_WINDOW` | `300` | ± seconds around expected P-arrival to count as a catalog match |
+| `STATION_LOG_DIR` / `STATION_LOG_RETENTION_DAYS` | `/data/station_log` / `3` | Persisted per-station confidence log (Fly's own log buffer only keeps a couple minutes — added after a 2026-08-19 missed-M5.5 near Ruteng, Indonesia was unrecoverable at the station-score level) |
+| `API_KEY` | unset | If set, required as `X-API-Key` header (or `?api_key=`) on `/api/config`, `/api/stations`, and other non-public endpoints |
+
+**Slack + Bitcoin integrations** (undocumented until now): `SLACK_WEBHOOK_URL`/`SLACK_SIGNING_SECRET` wire up `/slack/command` for a Slack slash-command interface; `BTCVM_LEDGER_PATH`/`BTCVM_BROADCAST`/`BTC_WIF` back `/api/btcvm`, an optional Bitcoin OP_RETURN detection ledger.
 
 ## Tests
 
