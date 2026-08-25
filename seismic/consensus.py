@@ -6,11 +6,11 @@ import numpy as np
 
 from seismic.config import (
     CHANNELS, N_CONSENSUS, CONSENSUS_WINDOW, THRESHOLD, ALERT_COOLDOWN,
-    P_LEAD_S, MB_DELAY_S, MAG_MAX_CREDIBLE, LOC_MIN_STA, fmt_mag,
+    P_LEAD_S, MB_DELAY_S, MAG_MAX_CREDIBLE, LOC_MIN_STA, MAX_COHERENT_RMS_S, fmt_mag,
     PER_STATION_COOLDOWN, NOISE_PERSIST_S, MIN_LOGIT_GAP, WIN_SAMPLES,
     STALTA_LARGE_THRESH, THRESHOLD_LARGE,
 )
-from seismic.localize import locate_epicenter, station_coords
+from seismic.localize import locate_epicenter, station_coords, haversine_km, p_travel_time_s
 from seismic.model import refine_picks_phasenet
 from seismic.runtime import get_threshold
 from seismic.state import sensor_state, DetectionSnap
@@ -122,25 +122,63 @@ def _arrival_offsets(p_arrivals, stations_fired, now):
 
 # ── Epicenter localization ─────────────────────────────────────────────────────
 
+def _worst_residual_station(arrivals, lat, lon, t0):
+    """Station whose observed P-arrival deviates most from what (lat, lon, t0)
+    predicts. Used only to pick an outlier to drop, not for the reported fit."""
+    def residual(key, obs_t):
+        if key not in station_coords:
+            return 0.0
+        sta_lat, sta_lon = station_coords[key]
+        dist_km = haversine_km(lat, lon, sta_lat, sta_lon)
+        pred_t = t0 + p_travel_time_s(dist_km)
+        return abs(obs_t - pred_t)
+    return max(arrivals, key=lambda kv: residual(*kv))[0]
+
+
 def _localize(arrivals, sp_dists):
-    """Attempt epicenter localization. Returns ((lat, lon), is_teleseismic) or (None, False)."""
+    """Attempt epicenter localization.
+    Returns ((lat, lon), is_teleseismic, dropped_key) or (None, False, None).
+    dropped_key is the station excluded as an incoherent outlier, if any —
+    callers should also drop it from any arrival set handed to catalog matching.
+    """
     if len(arrivals) < LOC_MIN_STA:
         n = len(arrivals)
         print(f"  Epicenter:  need {LOC_MIN_STA}+ stations (have {n} P-arrival(s))", flush=True)
-        return None, False
+        return None, False, None
 
     try:
         loc = locate_epicenter(arrivals, sp_distances=sp_dists)
     except Exception as e:
         print(f"  Epicenter:  localization failed ({e})", flush=True)
-        return None, False
+        return None, False, None
 
     if not loc:
         n_known = sum(1 for k, _ in arrivals if k in station_coords)
         print(f"  Epicenter:  need {LOC_MIN_STA} stations w/ coords (have {n_known})", flush=True)
-        return None, False
+        return None, False, None
 
     lat, lon, t0, rms = loc
+    dropped_key = None
+
+    # A fit this bad usually means the station set mixes arrivals from two
+    # different events that both landed inside CONSENSUS_WINDOW, not that
+    # this is a genuinely hard-to-locate single one. One-pass rejection:
+    # drop the worst-residual station and refit, rather than reporting (or
+    # feeding catalog-matching) a compromise location that fits neither event.
+    if rms > MAX_COHERENT_RMS_S and len(arrivals) > LOC_MIN_STA:
+        worst_key = _worst_residual_station(arrivals, lat, lon, t0)
+        reduced = [(k, t) for k, t in arrivals if k != worst_key]
+        try:
+            retry = locate_epicenter(reduced, sp_distances=sp_dists)
+        except Exception:
+            retry = None
+        if retry and retry[3] < rms:
+            print(f"  Epicenter:  rms={rms:.1f}s implausible for one event — "
+                  f"dropping {worst_key} as outlier, refit rms={retry[3]:.1f}s", flush=True)
+            lat, lon, t0, rms = retry
+            dropped_key = worst_key
+            arrivals = reduced
+
     is_teleseismic = rms > 15.0
     origin_ts = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(t0))
     ns = 'N' if lat >= 0 else 'S'
@@ -150,7 +188,7 @@ def _localize(arrivals, sp_dists):
     print(f"  Epicenter:  {abs(lat):.2f}°{ns} {abs(lon):.2f}°{ew}  "
           f"(rms={rms:.1f}s, {n_used} stations){tele_tag}", flush=True)
     print(f"  Origin:     {origin_ts}  (est.)", flush=True)
-    return (lat, lon), is_teleseismic
+    return (lat, lon), is_teleseismic, dropped_key
 
 
 # ── Detection dispatch ─────────────────────────────────────────────────────────
@@ -185,7 +223,13 @@ def _fire_detection(now, ts, conf, logit_gap, stations_fired, mean_gap=0.0):
     refined_p, sp_dists = refine_picks_phasenet(p_arr_snapshot)
 
     arrivals = [(k, t) for k, t in refined_p.items() if t is not None]
-    epicenter, is_teleseismic = _localize(arrivals, sp_dists)
+    epicenter, is_teleseismic, dropped_key = _localize(arrivals, sp_dists)
+
+    if dropped_key is not None:
+        # Keep the outlier out of catalog matching too — it's what set
+        # min_arr's search window in report_usgs_deferred, so a stray
+        # unrelated arrival can shift that window off the real origin.
+        p_arr_snapshot = {k: t for k, t in p_arr_snapshot.items() if k != dropped_key}
 
     print(f"{'='*60}\n", flush=True)
 

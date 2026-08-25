@@ -337,6 +337,67 @@ class TestLocateEpicenter(unittest.TestCase):
         self.assertIsNone(result)
 
 
+class TestLocalizeOutlierRejection(unittest.TestCase):
+    """_consensus._localize should drop a single station whose arrival is
+    inconsistent with the rest rather than reporting (or catalog-matching
+    against) a compromise fit that belongs to no real event."""
+
+    def setUp(self):
+        self._orig_coords = dict(sensor.station_coords)
+        sensor.station_coords.update({
+            'GE.APE':  (37.069,  25.531),
+            'GE.MORC': (49.781,  16.978),
+            'GE.WLF':  (49.664,   6.153),
+            'GE.STU':  (48.771,   9.194),
+        })
+
+    def tearDown(self):
+        sensor.station_coords.clear()
+        sensor.station_coords.update(self._orig_coords)
+
+    def _consistent_arrivals(self, epi_lat, epi_lon, t0, keys):
+        arrivals = []
+        for key in keys:
+            lat, lon = sensor.station_coords[key]
+            dist = sensor.haversine_km(epi_lat, epi_lon, lat, lon)
+            arrivals.append((key, t0 + sensor.p_travel_time_s(dist)))
+        return arrivals
+
+    def test_no_outlier_all_consistent(self):
+        arrivals = self._consistent_arrivals(45.0, 15.0, 0.0, ['GE.APE', 'GE.MORC', 'GE.WLF'])
+        epicenter, _is_tele, dropped_key = _consensus._localize(arrivals, None)
+        self.assertIsNotNone(epicenter)
+        self.assertIsNone(dropped_key)
+
+    def test_drops_station_from_unrelated_event(self):
+        # Three stations agree on one real origin; a fourth's arrival belongs
+        # to a completely different, much later event that happened to land
+        # in the same consensus window (the scenario the fix targets).
+        arrivals = self._consistent_arrivals(45.0, 15.0, 0.0, ['GE.APE', 'GE.MORC', 'GE.WLF'])
+        lat, lon = sensor.station_coords['GE.STU']
+        dist = sensor.haversine_km(45.0, 15.0, lat, lon)
+        consistent_t = sensor.p_travel_time_s(dist)
+        arrivals.append(('GE.STU', consistent_t + 200.0))  # +200s outlier
+
+        epicenter, _is_tele, dropped_key = _consensus._localize(arrivals, None)
+        self.assertEqual(dropped_key, 'GE.STU')
+        self.assertIsNotNone(epicenter)
+        self.assertAlmostEqual(epicenter[0], 45.0, delta=1.0)
+        self.assertAlmostEqual(epicenter[1], 15.0, delta=1.0)
+
+    def test_too_few_stations_to_drop_one(self):
+        # Only LOC_MIN_STA (3) arrivals available — even a bad fit must be
+        # reported as-is since there's no spare station to drop.
+        arrivals = self._consistent_arrivals(45.0, 15.0, 0.0, ['GE.APE', 'GE.MORC'])
+        lat, lon = sensor.station_coords['GE.WLF']
+        dist = sensor.haversine_km(45.0, 15.0, lat, lon)
+        consistent_t = sensor.p_travel_time_s(dist)
+        arrivals.append(('GE.WLF', consistent_t + 200.0))
+
+        _epicenter, _is_tele, dropped_key = _consensus._localize(arrivals, None)
+        self.assertIsNone(dropped_key)
+
+
 class TestSeedlinkReconnect(unittest.TestCase):
     """Verify that seedlink_loop sets conn.resume=False on each new client.
     This prevents ObsPy from attempting FETCH/TIME on reconnect, which GEOFON rejects.

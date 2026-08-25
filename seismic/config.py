@@ -76,6 +76,11 @@ STALTA_LARGE_THRESH = float(os.environ.get('STALTA_LARGE_THRESH', '12.0'))  # ra
 THRESHOLD_LARGE = float(os.environ.get('THRESHOLD_LARGE', '0.45'))  # lowered conf threshold for large-event rescue
 P_VEL_KM_S = float(os.environ.get('P_VEL_KM_S', '8.0'))   # teleseismic P-wave speed
 LOC_MIN_STA = int(os.environ.get('LOC_MIN_STA', '3'))       # stations needed for location
+# Above this TDOA-fit RMS (seconds), a station set doesn't plausibly share one
+# origin — likely two unrelated events whose stations both landed inside the
+# same CONSENSUS_WINDOW. Real single-event fits (including teleseismic) rarely
+# exceed this; it's well above the 15s teleseismic tag threshold on purpose.
+MAX_COHERENT_RMS_S = float(os.environ.get('MAX_COHERENT_RMS_S', '45.0'))
 P_LEAD_S = float(os.environ.get('P_LEAD_S', '0.5'))         # model's pre-P horizon
 WEB_PORT = int(os.environ.get('WEB_PORT', '8080'))
 TUI_MODE = os.environ.get('TUI', '').lower() in ('1', 'true', 'yes')
