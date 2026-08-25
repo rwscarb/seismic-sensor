@@ -171,7 +171,17 @@ def _fire_detection(now, ts, conf, logit_gap, stations_fired, mean_gap=0.0):
     print(f"  Magnitude:  mb computing... (+{MB_DELAY_S:.0f}s)", flush=True)
     print(f"  Lead time:  +{P_LEAD_S}s before P-arrival", flush=True)
 
-    p_arr_snapshot = {k: t for k, t in station_first_arr.items() if t is not None}
+    # Only stations that are part of *this* consensus group — station_first_arr
+    # is set-once and only cleared by reset_arrivals() below, so a station that
+    # tripped threshold long ago on an unrelated signal and never fired can
+    # otherwise still be sitting in here and get stitched into this event's
+    # localization, corrupting the epicenter/origin-time fit (root cause of
+    # false positives correlating with *more* firing stations, not fewer —
+    # found 2026-08-25).
+    p_arr_snapshot = {
+        k: t for k, t in station_first_arr.items()
+        if t is not None and k in stations_fired
+    }
     refined_p, sp_dists = refine_picks_phasenet(p_arr_snapshot)
 
     arrivals = [(k, t) for k, t in refined_p.items() if t is not None]
