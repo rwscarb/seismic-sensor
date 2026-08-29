@@ -1707,14 +1707,39 @@ function _updateBootMsg(streak) {
     msg.textContent = streak < 6 ? t('boot_connecting') : t('status_restarting');
 }
 
+// The detections list only grows on a real detection (at most one per
+// ALERT_COOLDOWN, i.e. minutes apart) — re-fetching and re-rendering the
+// whole (currently ~2MB) list every 3s tick was pure waste. Routine ticks
+// ask for station liveness only (?full=0); a full fetch (with detections)
+// happens immediately when detections_count changes, and otherwise every
+// _FULL_POLL_EVERY ticks anyway to pick up in-place field updates on
+// already-shown detections (mb refine, USGS confirmation) that don't
+// change the count.
+let _pollTick = 0;
+const _FULL_POLL_EVERY = 10;
+let _lastKnownDetCount = (window.SEISMIC_INITIAL_STATE && window.SEISMIC_INITIAL_STATE.detections)
+    ? window.SEISMIC_INITIAL_STATE.detections.length : null;
+
 function update() {
-    fetch('/api/state').then(function (r) {
+    _pollTick++;
+    const needFull = _lastKnownDetCount === null || (_pollTick % _FULL_POLL_EVERY === 0);
+    fetch(needFull ? '/api/state' : '/api/state?full=0').then(function (r) {
         if (!r.ok) { throw new Error('HTTP ' + r.status); }
         return r.json();
     }).then(function (d) {
         _failStreak = 0;
         _setBootOverlay(false);
         document.getElementById('status-dot').style.background = '';
+        const newDetection = d.detections_count !== undefined && d.detections_count !== _lastKnownDetCount;
+        if (newDetection) { _lastKnownDetCount = d.detections_count; }
+        if (newDetection && !d.detections) {
+            // A detection landed but this was a lightweight poll — go get it now
+            // rather than waiting up to _FULL_POLL_EVERY ticks to show it.
+            fetch('/api/state').then(function (r2) { return r2.json(); }).then(function (d2) {
+                try { _updateBody(d2); } catch (e) { console.error('[seismic] update error:', e); }
+            });
+            return;
+        }
         try { _updateBody(d); } catch (e) { console.error('[seismic] update error:', e); }
     }).catch(function () {
         _failStreak++;
@@ -1751,7 +1776,8 @@ function _updateBody(d) {
 
     _renderStations(d);
 
-    const dets = [...d.detections].reverse();
+    const srcDets = d.detections || _lastDets;  // lightweight polls carry no detections payload
+    const dets = [...srcDets].reverse();
     let filteredDets = dets;
     if (filterConfirmed) { filteredDets = filteredDets.filter(function (det) { return !!det.usgs; }); }
     if (filterLocal)     { filteredDets = filteredDets.filter(function (det) { return det.epicenter && !det.teleseismic; }); }
@@ -1762,8 +1788,8 @@ function _updateBody(d) {
     const activeFilters = filterConfirmed || filterLocal || filterMinMb > 0;
     if (cntEl) {
         cntEl.textContent = activeFilters
-            ? filteredDets.length + ' / ' + d.detections.length
-            : (d.detections.length ? d.detections.length + ' total' : '');
+            ? filteredDets.length + ' / ' + srcDets.length
+            : (srcDets.length ? srcDets.length + ' total' : '');
     }
 
     if (dets.length) {

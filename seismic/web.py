@@ -113,13 +113,20 @@ def start_web_server():
 
     @app.route('/api/state')
     def state():
-        data = sensor_state.to_dict()
+        # ?full=0 — used by the 3s live-station poll, which only renders
+        # station liveness and doesn't need the (growing, currently ~2MB)
+        # detections list re-serialized every tick. detections_count /
+        # latest_detection_ts let the poller notice a new detection cheaply
+        # and fall back to a full fetch only when one actually happened.
+        full = request.args.get('full', '1') != '0'
+        data = sensor_state.to_dict(include_detections=full)
         data['station_coords'] = {k: list(v) for k, v in list(station_coords.items())}
-        try:
-            from seismic.collector import collection_stats  # noqa: PLC0415
-            data['training'] = collection_stats()
-        except Exception:
-            pass
+        if full:
+            try:
+                from seismic.collector import collection_stats  # noqa: PLC0415
+                data['training'] = collection_stats()
+            except Exception:
+                pass
         return jsonify(data)
 
     @app.route('/api/btcvm')

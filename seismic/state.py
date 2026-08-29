@@ -150,25 +150,33 @@ class SensorState:
                     return det
         return None
 
-    def to_dict(self):
+    def to_dict(self, include_detections=True):
+        """include_detections=False skips serializing the (growing, currently
+        up to MAX_DETECTIONS) detection list — the expensive part of this call
+        under lock. Used by the frequent live-station poll, which only needs
+        station liveness; detections_count/latest_detection_ts are O(1) and
+        let callers cheaply notice when a real detections re-fetch is due."""
         with self._lock:
             stations_out = {}
             for k, v in self.stations.items():
                 d = dataclasses.asdict(v)
                 hist = list(self._conf_history.get(k, []))
-                hist = list(self._conf_history.get(k, []))
                 d['conf_history'] = hist
                 d['flatline'] = self._is_flatline(k, hist)
                 stations_out[k] = d
-            return {
+            out = {
                 'stations': stations_out,
-                'detections': [
-                    {**dataclasses.asdict(d), 'stations': list(d.stations)}
-                    for d in self.detections
-                ],
                 'now': time.time(),
                 'server_start': SERVER_START_TIME,
+                'detections_count': len(self.detections),
+                'latest_detection_ts': self.detections[-1].unix_ts if self.detections else None,
             }
+            if include_detections:
+                out['detections'] = [
+                    {**dataclasses.asdict(d), 'stations': list(d.stations)}
+                    for d in self.detections
+                ]
+            return out
 
 
 sensor_state = SensorState()
