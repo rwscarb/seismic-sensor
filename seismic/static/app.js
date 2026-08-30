@@ -137,37 +137,61 @@ const detMarkers = [];
 // pile into an unreadable stack of overlapping circles. Cluster color reuses
 // the same magnitude ramp as the individual markers — a cluster containing a
 // big event should read as "big" before you even expand it.
-const epiCluster = L.markerClusterGroup({
-    maxClusterRadius: 50,
-    spiderfyOnMaxZoom: true,
-    showCoverageOnHover: false,
-    iconCreateFunction: function (cluster) {
-        const markers = cluster.getAllChildMarkers();
-        const maxMb = markers.reduce(function (m, mk) {
-            return Math.max(m, mk._detMb || 0);
-        }, 0);
-        // Same validated sequential hue as individual markers, just varying
-        // lightness/opacity across the disc instead of a flat fill — still
-        // one hue (dataviz: sequential = one hue, light→dark), not a second
-        // palette. Off-center highlight reads as a glossy sphere; the inset
-        // ring is the mark-spec's "ring on overlapping marks" applied to a
-        // cluster, which *is* an aggregate of overlapping marks.
-        const rgb = _magColorRgb(maxMb).join(',');
-        const n = markers.length;
-        const size = Math.round(Math.min(56, 22 + Math.sqrt(n) * 8));
-        return L.divIcon({
-            html: '<div style="width:100%;height:100%;border-radius:50%;'
-                + 'background:radial-gradient(circle at 35% 30%, rgba(' + rgb + ',0.98) 0%, '
-                + 'rgba(' + rgb + ',0.88) 55%, rgba(' + rgb + ',0.55) 100%);'
-                + 'box-shadow:0 0 8px rgba(' + rgb + ',0.55), inset 0 0 0 2px rgba(255,255,255,0.18);'
-                + 'display:flex;align-items:center;justify-content:center;'
-                + 'color:#fff;font:600 ' + Math.round(size / 2.6) + 'px system-ui,sans-serif">'
-                + n + '</div>',
-            className: 'epi-cluster-icon',
-            iconSize: [size, size],
-        });
-    },
-}).addTo(map);
+//
+// Clustering can be toggled off (see _setClustering below). markercluster's
+// grid radius is baked in at construction (_generateInitialClusters runs
+// once, off the initial options) and isn't a documented runtime-mutable
+// setting, so toggling swaps the whole group for a fresh one built with
+// maxClusterRadius near zero rather than trying to mutate it in place.
+function _makeEpiCluster(radius) {
+    return L.markerClusterGroup({
+        maxClusterRadius: radius,
+        spiderfyOnMaxZoom: true,
+        showCoverageOnHover: false,
+        iconCreateFunction: function (cluster) {
+            const markers = cluster.getAllChildMarkers();
+            const maxMb = markers.reduce(function (m, mk) {
+                return Math.max(m, mk._detMb || 0);
+            }, 0);
+            // Same validated sequential hue as individual markers, just varying
+            // lightness/opacity across the disc instead of a flat fill — still
+            // one hue (dataviz: sequential = one hue, light→dark), not a second
+            // palette. Off-center highlight reads as a glossy sphere; the inset
+            // ring is the mark-spec's "ring on overlapping marks" applied to a
+            // cluster, which *is* an aggregate of overlapping marks.
+            const rgb = _magColorRgb(maxMb).join(',');
+            const n = markers.length;
+            const size = Math.round(Math.min(56, 22 + Math.sqrt(n) * 8));
+            return L.divIcon({
+                html: '<div style="width:100%;height:100%;border-radius:50%;'
+                    + 'background:radial-gradient(circle at 35% 30%, rgba(' + rgb + ',0.98) 0%, '
+                    + 'rgba(' + rgb + ',0.88) 55%, rgba(' + rgb + ',0.55) 100%);'
+                    + 'box-shadow:0 0 8px rgba(' + rgb + ',0.55), inset 0 0 0 2px rgba(255,255,255,0.18);'
+                    + 'display:flex;align-items:center;justify-content:center;'
+                    + 'color:#fff;font:600 ' + Math.round(size / 2.6) + 'px system-ui,sans-serif">'
+                    + n + '</div>',
+                className: 'epi-cluster-icon',
+                iconSize: [size, size],
+            });
+        },
+    }).addTo(map);
+}
+
+let clusteringEnabled = loadSettings().clusteringEnabled !== false;  // default on
+let epiCluster = _makeEpiCluster(clusteringEnabled ? 50 : 1);
+
+// Swaps epiCluster for a freshly-built group at the new radius, carrying
+// over every marker currently clustered. Markers popped directly onto the
+// map (pinned/selected — see _pinMarker) aren't layers of epiCluster and are
+// untouched by the swap, same as any other epiCluster.addLayer/removeLayer.
+function _setClustering(enabled) {
+    clusteringEnabled = enabled;
+    saveSettings({ clusteringEnabled });
+    const layers = epiCluster.getLayers();
+    map.removeLayer(epiCluster);
+    epiCluster = _makeEpiCluster(enabled ? 50 : 1);
+    if (layers.length) { epiCluster.addLayers(layers); }
+}
 let sCoords = CONFIG.sCoords;
 let lastFlyTs = null, lastFlyLat = null, lastFlyLon = null;
 let selectedDetTs = null;
@@ -374,6 +398,17 @@ _faultsBtn.click();
             saveSettings({ filterMinMb });
             update();
         });
+    }
+
+    const clusterBtn = document.getElementById('cluster-toggle-btn');
+    if (clusterBtn) {
+        clusterBtn.addEventListener('click', function () {
+            _setClustering(!clusteringEnabled);
+            clusterBtn.style.color = clusteringEnabled ? '#3fb950' : '#6e7681';
+            clusterBtn.style.borderColor = clusteringEnabled ? '#3fb950' : '#30363d';
+        });
+        clusterBtn.style.color = clusteringEnabled ? '#3fb950' : '#6e7681';
+        clusterBtn.style.borderColor = clusteringEnabled ? '#3fb950' : '#30363d';
     }
 
     // Sync initial visual state to actual filter values
