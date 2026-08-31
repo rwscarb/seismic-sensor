@@ -73,12 +73,23 @@ function _syncFiltersToUrl() {
 
 const map = L.map('map', { zoomControl: false }).setView([45, 10], 2);
 
-const _darkLayer = L.tileLayer(
-    'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    { attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 19 }
+const _mbToken = CONFIG.mapboxToken;
+
+// CARTO's free dark_all tiles now require an API key we don't have and
+// return a tiled "API KEY REQUIRED" placeholder image instead of a 4xx —
+// Mapbox's own dark style, already paid for via the same token used below
+// for satellite view, replaces it when a token is configured.
+const _darkLayer = (_mbToken
+    ? L.tileLayer(
+        'https://api.mapbox.com/styles/v1/mapbox/dark-v11/tiles/256/{z}/{x}/{y}@2x?access_token=' + _mbToken,
+        { attribution: '&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; OpenStreetMap', maxZoom: 20, tileSize: 256 }
+    )
+    : L.tileLayer(
+        'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+        { attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 19 }
+    )
 ).addTo(map);
 
-const _mbToken = CONFIG.mapboxToken;
 let _satBase, _satLabels;
 
 if (_mbToken) {
