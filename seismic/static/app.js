@@ -73,6 +73,15 @@ function _syncFiltersToUrl() {
 
 const map = L.map('map', { zoomControl: false }).setView([45, 10], 2);
 
+// Cluster bubbles are L.Marker (divIcon) → markerPane (z=600 by default),
+// while individual epicenter dots are L.circleMarker (SVG path) →
+// overlayPane (z=400) — different panes, so a plain bringToFront() can't
+// lift a selected dot above a cluster bubble; it only reorders within its
+// own pane. pinnedPane sits above markerPane (but below tooltipPane, so
+// tooltips of any marker still read over it) for exactly the selected pin.
+map.createPane('pinnedPane');
+map.getPane('pinnedPane').style.zIndex = 625;
+
 const _mbToken = CONFIG.mapboxToken;
 
 // CARTO's free dark_all tiles now require an API key we don't have and
@@ -225,22 +234,26 @@ function _pinMarker(m) {
     if (_pinnedMarker === m) { m.openTooltip(); return; }
     if (_pinnedMarker) { _unpinMarker(); }
     _pinnedMarker = m;
-    if (epiCluster.hasLayer(m) && !map.hasLayer(m)) {
-        epiCluster.removeLayer(m);
-        m.addTo(map);
-        _pinnedPopped = true;
-    } else {
-        _pinnedPopped = false;
-    }
+    // Capture origin before touching anything, then unconditionally land in
+    // pinnedPane (map.removeLayer first, since addTo() is a no-op — pane
+    // included — on a layer the map already considers added).
+    _pinnedPopped = epiCluster.hasLayer(m);
+    if (_pinnedPopped) { epiCluster.removeLayer(m); }
+    if (map.hasLayer(m)) { map.removeLayer(m); }
+    m.options.pane = 'pinnedPane';
+    m.addTo(map);
     m.openTooltip();
 }
 
 function _unpinMarker() {
     if (_pinnedMarker) {
         _pinnedMarker.closeTooltip();
+        map.removeLayer(_pinnedMarker);
+        _pinnedMarker.options.pane = 'overlayPane';  // L.Path/circleMarker default
         if (_pinnedPopped) {
-            map.removeLayer(_pinnedMarker);
             epiCluster.addLayer(_pinnedMarker);
+        } else {
+            _pinnedMarker.addTo(map);
         }
         _pinnedMarker = null;
         _pinnedPopped = false;
